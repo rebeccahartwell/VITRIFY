@@ -4,80 +4,54 @@ from typing import List, Optional, Literal, Dict
 import requests
 
 # ============================================================================
-# SETTINGS (you can change these numbers here, or answer the prompts in
-# the terminal to override some of them per run)
+# SETTINGS
 # ============================================================================
 
-# Used by the online geocoder (Nominatim). Put your email here if you want.
 GEOCODER_USER_AGENT = "igu-reuse-tool/0.1 (CHANGE_THIS_TO_YOUR_EMAIL@DOMAIN)"
 
-# On-site dismantling (selective IGU removal)
-# This is "kg CO2e per m² of glass removed".
-# The script multiplies this by the total IGU area to get C1-like emissions.
 E_SITE_KGCO2_PER_M2 = 0.15
 
-# Energy / emissions for later steps
-# These are simple starting values.
-REMANUFACTURING_KGCO2_PER_M2 = 7.5   # kg CO2e per m² remanufactured glass (component route)
-DISASSEMBLY_KGCO2_PER_M2 = 0.5       # kg CO2e per m² for system disassembly
+REMANUFACTURING_KGCO2_PER_M2 = 7.5
+DISASSEMBLY_KGCO2_PER_M2 = 0.5
 
-# Repurposing presets (system-level, IGUs kept as IGUs but reworked/upcycled)
-# These are order-of-magnitude values based on typical energy use
-# for tempering / secondary processing (a few kWh/m²) and EU grid factors,
-# compared to flat glass / IGU EPD values.
-REPURPOSE_LIGHT_KGCO2_PER_M2 = 0.5   # cleaning, minor repairs, fittings
-REPURPOSE_MEDIUM_KGCO2_PER_M2 = 1.0  # cutting, edge working, some drilling
-REPURPOSE_HEAVY_KGCO2_PER_M2 = 2.0   # intensive rework incl. tempering / fritting
+REPURPOSE_LIGHT_KGCO2_PER_M2 = 0.5
+REPURPOSE_MEDIUM_KGCO2_PER_M2 = 1.0
+REPURPOSE_HEAVY_KGCO2_PER_M2 = 2.0
 
-# Stillage manufacturing and lifetime
-# We treat stillages as reusable racks. This part is OPTIONAL.
-# If INCLUDE_STILLAGE_EMBODIED = False, the model ignores these emissions.
-STILLAGE_MANUFACTURE_KGCO2 = 500.0   # kg CO2e to make one stillage (simple guess)
-STILLAGE_LIFETIME_CYCLES = 100       # how many full loads it serves
-INCLUDE_STILLAGE_EMBODIED = False    # default: do NOT count stillage manufacturing
+STILLAGE_MANUFACTURE_KGCO2 = 500.0
+STILLAGE_LIFETIME_CYCLES = 100
+INCLUDE_STILLAGE_EMBODIED = False
 
-# Transport emission factors (kg CO2e per tonne-kilometre)
-# These match the presets you asked for.
-EMISSIONFACTOR_TRUCK = 0.04   # central EU HDV value
-EMISSIONFACTOR_FERRY = 0.045  # Ro-Ro / Ro-Pax ferry
+EMISSIONFACTOR_TRUCK = 0.04
+EMISSIONFACTOR_FERRY = 0.045
 
-# Backhaul factor:
-# 1.0 = only one-way counted, 2.0 = full round trip,
-# 1.3–1.5 = something in between.
 BACKHAUL_FACTOR = 1.3
 
-# Vehicle capacities (tonnes). Not heavily used yet, but good to have.
 TRUCK_CAPACITY_T = 20.0
 FERRY_CAPACITY_T = 1000.0
 
-# Fallback distances (km) if the distance looks wrong (0).
 DISTANCE_FALLBACK_A_KM = 100.0
 DISTANCE_FALLBACK_B_KM = 100.0
 
-# Approximate mass per m² of IGU glass
 MASS_PER_M2_DOUBLE = 20.0
 MASS_PER_M2_TRIPLE = 30.0
 
-# Process yields and losses
 BREAKAGE_RATE_GLOBAL = 0.05
 HUMIDITY_FAILURE_RATE = 0.05
 SPLIT_YIELD = 0.95
 REMANUFACTURING_YIELD = 0.90
 
-# Stillage packing
 IGUS_PER_STILLAGE = 20
 STILLAGE_MASS_EMPTY_KG = 300.0
-MAX_TRUCK_LOAD_KG = 20000.0  # only for checks
+MAX_TRUCK_LOAD_KG = 20000.0
 
-# Default transport mode for each leg
-ROUTE_A_MODE = "truck_only"  # origin -> processor
-ROUTE_B_MODE = "truck_only"  # processor -> reuse
+ROUTE_A_MODE = "truck_only"
+ROUTE_B_MODE = "truck_only"
 
-# Number of decimals when printing results
 DECIMALS = 3
 
 # ============================================================================
-# TYPE ALIASES (for readability)
+# TYPE ALIASES
 # ============================================================================
 
 GlazingType = Literal["double", "triple"]
@@ -133,11 +107,8 @@ class ProcessSettings:
     max_truck_load_kg: float = MAX_TRUCK_LOAD_KG
     process_level: ProcessLevel = "component"
     system_path: SystemPath = "reuse"
-    # On-site dismantling factor (kg CO2e per m² of glass)
     e_site_kgco2_per_m2: float = E_SITE_KGCO2_PER_M2
-    # Whether to include stillage manufacturing emissions
     include_stillage_embodied: bool = INCLUDE_STILLAGE_EMBODIED
-    # Repurposing intensity (system path = "repurpose")
     repurpose_preset: RepurposePreset = "medium"
     repurpose_kgco2_per_m2: float = REPURPOSE_MEDIUM_KGCO2_PER_M2
 
@@ -164,7 +135,12 @@ class IGUGroup:
     spacer_material: SpacerMaterial
     interlayer_type: Optional[str]
     condition: IGUCondition
+    pane_thickness_outer_mm: float
+    pane_thickness_inner_mm: float
+    cavity_thickness_1_mm: float
     mass_per_m2_override: Optional[float] = None
+    pane_thickness_middle_mm: Optional[float] = None
+    cavity_thickness_2_mm: Optional[float] = None
 
 
 @dataclass
@@ -195,7 +171,6 @@ def f3(x: float) -> str:
 
 
 def haversine_km(a: Location, b: Location) -> float:
-    """Great-circle distance between two locations in km."""
     r = 6371.0
     lat1 = radians(a.lat)
     lon1 = radians(a.lon)
@@ -209,7 +184,6 @@ def haversine_km(a: Location, b: Location) -> float:
 
 
 def compute_route_distances(route: RouteConfig) -> Dict[str, float]:
-    """Get distances for leg A (origin→processor) and B (processor→reuse)."""
     base_A = haversine_km(route.origin, route.processor)
     base_B = haversine_km(route.processor, route.reuse)
 
@@ -258,12 +232,6 @@ def default_mass_per_m2(glazing_type: GlazingType) -> float:
 def aggregate_igu_groups(
     groups: List[IGUGroup], processes: ProcessSettings
 ) -> Dict[str, float]:
-    """
-    Sum up:
-    - total IGUs and total glass area,
-    - eligible IGUs (good enough for reuse/remanufacture),
-    - remanufactured IGUs and area based on loss factors.
-    """
     total_igus = 0
     total_area_m2 = 0.0
     eligible_igus = 0
@@ -304,9 +272,6 @@ def aggregate_igu_groups(
 
 
 def compute_masses(groups: List[IGUGroup], stats: Dict[str, float]) -> Dict[str, float]:
-    """
-    Get total batch mass, eligible mass, remanufactured mass, and average mass per IGU.
-    """
     total_mass_kg = 0.0
 
     for g in groups:
@@ -337,14 +302,6 @@ def compute_masses(groups: List[IGUGroup], stats: Dict[str, float]) -> Dict[str,
 
 
 def packaging_factor_per_igu(processes: ProcessSettings) -> float:
-    """
-    If include_stillage_embodied is False, packaging emissions from stillage
-    manufacturing are set to zero.
-
-    If True, we use:
-        E_per_IGU = STILLAGE_MANUFACTURE_KGCO2 /
-                    (STILLAGE_LIFETIME_CYCLES * igus_per_stillage)
-    """
     if not processes.include_stillage_embodied:
         return 0.0
     if processes.igus_per_stillage <= 0 or STILLAGE_LIFETIME_CYCLES <= 0:
@@ -354,7 +311,7 @@ def packaging_factor_per_igu(processes: ProcessSettings) -> float:
     )
 
 # ============================================================================
-# PHASE A: up to transport to processor
+# PHASE A
 # ============================================================================
 
 def compute_phase_A(
@@ -382,14 +339,11 @@ def compute_phase_A(
 
     mass_A_t = (masses["eligible_mass_kg"] + stillage_mass_A_kg) / 1000.0
 
-    # On-site dismantling emissions
     dismantling_kgco2 = stats["total_area_m2"] * processes.e_site_kgco2_per_m2
 
-    # Packaging from stillage manufacturing (optional, can be zero)
     pkg_per_igu = packaging_factor_per_igu(processes)
     packaging_kgco2 = stats["eligible_igus"] * pkg_per_igu
 
-    # Transport A emissions
     transport_A_kgco2 = mass_A_t * (
         truck_A_km * route.emissionfactor_truck
         + ferry_A_km * route.emissionfactor_ferry
@@ -410,29 +364,25 @@ def compute_phase_A(
     }
 
 # ============================================================================
-# FULL CHAIN: A + processing + B
+# FULL CHAIN (kept for later tasks, not invoked in Task 1 main flow)
 # ============================================================================
 
 def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     stats = aggregate_igu_groups(batch.igu_groups, batch.processes)
     masses = compute_masses(batch.igu_groups, stats)
 
-    # Stillages A: always based on eligible IGUs sent to processor
     n_stillages_A = (
         ceil(stats["eligible_igus"] / batch.processes.igus_per_stillage)
         if batch.processes.igus_per_stillage > 0
         else 0
     )
 
-    # Stillages B: depends on whether we are in component or system route
     if batch.processes.igus_per_stillage > 0:
         if batch.processes.process_level == "component":
-            # B-leg carries remanufactured IGUs
             n_stillages_B = ceil(
                 stats["remanufactured_igus"] / batch.processes.igus_per_stillage
             )
         else:
-            # System-level: B-leg carries intact IGUs that remain usable
             n_stillages_B = ceil(
                 stats["eligible_igus"] / batch.processes.igus_per_stillage
             )
@@ -442,10 +392,8 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     stillage_mass_A_kg = n_stillages_A * batch.processes.stillage_mass_empty_kg
     stillage_mass_B_kg = n_stillages_B * batch.processes.stillage_mass_empty_kg
 
-    # On-site dismantling
     dismantling_kgco2 = stats["total_area_m2"] * batch.processes.e_site_kgco2_per_m2
 
-    # Packaging (may be zero)
     pkg_per_igu = packaging_factor_per_igu(batch.processes)
     packaging_kgco2 = stats["eligible_igus"] * pkg_per_igu
 
@@ -468,10 +416,8 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     mass_A_t = (masses["eligible_mass_kg"] + stillage_mass_A_kg) / 1000.0
 
     if batch.processes.process_level == "component":
-        # Component route: mass B based on remanufactured IGUs
         mass_B_t = (masses["remanufactured_mass_kg"] + stillage_mass_B_kg) / 1000.0
     else:
-        # System route (reuse or repurpose): mass B based on eligible IGUs
         mass_B_t = (masses["eligible_mass_kg"] + stillage_mass_B_kg) / 1000.0
 
     transport_A_kgco2 = mass_A_t * (
@@ -483,30 +429,25 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
         + ferry_B_km * batch.route.emissionfactor_ferry
     )
 
-    # System-level disassembly (only for process_level == "system")
     disassembly_kgco2 = 0.0
     if batch.processes.process_level == "system":
         disassembly_kgco2 = stats["eligible_area_m2"] * DISASSEMBLY_KGCO2_PER_M2
 
-    # Processing / remanufacturing / repurposing
     remanufacturing_kgco2 = 0.0
     if batch.processes.process_level == "component":
-        # Component route: full remanufacturing of IGUs from recovered panes
         remanufacturing_kgco2 = (
             stats["remanufactured_area_m2"] * REMANUFACTURING_KGCO2_PER_M2
         )
     elif batch.processes.process_level == "system":
         if batch.processes.system_path == "reuse":
-            # System reuse: no heavy processing beyond disassembly, handled above.
             remanufacturing_kgco2 = 0.0
         elif batch.processes.system_path == "repurpose":
-            # System repurpose: IGUs kept but reworked (cutting, tempering, etc.).
             repurpose_area_m2 = stats["eligible_area_m2"]
             remanufacturing_kgco2 = (
                 repurpose_area_m2 * batch.processes.repurpose_kgco2_per_m2
             )
 
-    quality_control_kgco2 = 0.0  # placeholder for future steps
+    quality_control_kgco2 = 0.0
 
     total_kgco2 = (
         dismantling_kgco2
@@ -626,74 +567,25 @@ def prompt_yes_no(label: str, default: bool) -> bool:
         print("Please answer y or n.")
 
 # ============================================================================
-# MAIN
+# MAIN (TASK 1: up to first transportation leg)
 # ============================================================================
 
 if __name__ == "__main__":
-    print("IGU reuse carbon prototype\n")
+    print("IGU reuse carbon prototype – Phase A (on-site removal and first transport)\n")
 
+    print("First, provide the key locations.\n")
     origin = prompt_location("project origin (on-site removal)")
-    processor = prompt_location("processor location")
-    reuse = prompt_location("reuse location")
+    processor = prompt_location("processor location (main processing site)")
+
+    route = RouteConfig(origin=origin, processor=processor, reuse=processor)
 
     print("\nLocations used:")
     print(f"  Origin   : {origin.lat:.6f}, {origin.lon:.6f}")
-    print(f"  Processor: {processor.lat:.6f}, {processor.lon:.6f}")
-    print(f"  Reuse    : {reuse.lat:.6f}, {reuse.lon:.6f}\n")
+    print(f"  Processor: {processor.lat:.6f}, {processor.lon:.6f}\n")
 
-    route = RouteConfig(origin=origin, processor=processor, reuse=reuse)
     processes = ProcessSettings()
 
-    # On-site dismantling factor
-    e_site_str = input(
-        f"On-site dismantling factor E_site (kg CO2e/m² glass) "
-        f"(press Enter for {E_SITE_KGCO2_PER_M2}): "
-    ).strip()
-    if e_site_str:
-        try:
-            processes.e_site_kgco2_per_m2 = float(e_site_str)
-        except ValueError:
-            print("Invalid E_site value, keeping default.")
-
-    # Stillage manufacturing: include or ignore
-    include_stillage = prompt_yes_no(
-        "Include stillage manufacturing emissions?", default=INCLUDE_STILLAGE_EMBODIED
-    )
-    processes.include_stillage_embodied = include_stillage
-
-    # Truck emission presets
-    print("\nSelect truck emission factor preset:")
-    print("  eu_legacy    = 0.06 kgCO2e/tkm  (older diesel trucks)")
-    print("  eu_current   = 0.04 kgCO2e/tkm  (current EU average)")
-    print("  best_diesel  = 0.03 kgCO2e/tkm  (best-in-class diesel)")
-    print("  ze_truck     = 0.0075 kgCO2e/tkm (electric truck, grid mix)")
-
-    truck_preset = prompt_choice(
-        "Truck emission preset",
-        ["eu_legacy", "eu_current", "best_diesel", "ze_truck"],
-        default="eu_current",
-    )
-
-    if truck_preset == "eu_legacy":
-        route.emissionfactor_truck = 0.06
-    elif truck_preset == "eu_current":
-        route.emissionfactor_truck = 0.04
-    elif truck_preset == "best_diesel":
-        route.emissionfactor_truck = 0.03
-    elif truck_preset == "ze_truck":
-        route.emissionfactor_truck = 0.0075
-
-    route.emissionfactor_ferry = EMISSIONFACTOR_FERRY
-
-    print(
-        f"\nUsing truck emission factor: {route.emissionfactor_truck} kg CO2e/tkm "
-        f"(preset: {truck_preset})"
-    )
-    print(
-        f"Using ferry emission factor: {route.emissionfactor_ferry} kg CO2e/tkm\n"
-    )
-
-    # IGU batch
+    print("Now describe the IGU batch.\n")
     total_igus_str = input("Total number of IGUs in this batch: ").strip()
     width_str = input("Width of each IGU in mm: ").strip()
     height_str = input("Height of each IGU in mm: ").strip()
@@ -703,7 +595,7 @@ if __name__ == "__main__":
         width_mm = float(width_str)
         height_mm = float(height_str)
     except ValueError:
-        print("Invalid numeric input.")
+        print("Invalid numeric input for IGU count or dimensions.")
         raise SystemExit(1)
 
     glazing_type_str = prompt_choice(
@@ -730,6 +622,35 @@ if __name__ == "__main__":
         ["aluminium", "steel", "warm_edge_composite"],
         default="aluminium",
     )
+
+    if glazing_type_str == "double":
+        outer_th_str = input("Outer pane thickness (mm): ").strip()
+        inner_th_str = input("Inner pane thickness (mm): ").strip()
+        cavity1_str = input("Cavity thickness (mm): ").strip()
+        try:
+            pane_thickness_outer_mm = float(outer_th_str)
+            pane_thickness_inner_mm = float(inner_th_str)
+            cavity_thickness_1_mm = float(cavity1_str)
+        except ValueError:
+            print("Invalid numeric input for pane or cavity thickness.")
+            raise SystemExit(1)
+        pane_thickness_middle_mm = None
+        cavity_thickness_2_mm = None
+    else:
+        outer_th_str = input("Outer pane thickness (mm): ").strip()
+        middle_th_str = input("Middle pane thickness (mm): ").strip()
+        inner_th_str = input("Inner pane thickness (mm): ").strip()
+        cavity1_str = input("First cavity thickness (mm): ").strip()
+        cavity2_str = input("Second cavity thickness (mm): ").strip()
+        try:
+            pane_thickness_outer_mm = float(outer_th_str)
+            pane_thickness_middle_mm = float(middle_th_str)
+            pane_thickness_inner_mm = float(inner_th_str)
+            cavity_thickness_1_mm = float(cavity1_str)
+            cavity_thickness_2_mm = float(cavity2_str)
+        except ValueError:
+            print("Invalid numeric input for pane or cavity thickness.")
+            raise SystemExit(1)
 
     edge_cond_str = prompt_choice(
         "Visible edge seal condition", ["ok", "damaged", "unknown"], default="ok"
@@ -764,15 +685,101 @@ if __name__ == "__main__":
         spacer_material=spacer_str,  # type: ignore[arg-type]
         interlayer_type=None,
         condition=condition,
+        pane_thickness_outer_mm=pane_thickness_outer_mm,
+        pane_thickness_inner_mm=pane_thickness_inner_mm,
+        cavity_thickness_1_mm=cavity_thickness_1_mm,
         mass_per_m2_override=None,
+        pane_thickness_middle_mm=pane_thickness_middle_mm,
+        cavity_thickness_2_mm=cavity_thickness_2_mm,
     )
 
-    # Phase A feedback
+    stats_initial = aggregate_igu_groups([group], processes)
+    total_area_m2_initial = stats_initial["total_area_m2"]
+
+    e_site_str = input(
+        f"\nOn-site dismantling factor E_site (kg CO2e/m² glass) "
+        f"(press Enter for {E_SITE_KGCO2_PER_M2}): "
+    ).strip()
+    if e_site_str:
+        try:
+            processes.e_site_kgco2_per_m2 = float(e_site_str)
+        except ValueError:
+            print("Invalid E_site value, keeping default.")
+
+    dismantling_only_kgco2 = total_area_m2_initial * processes.e_site_kgco2_per_m2
+    print(
+        f"\nEstimated on-site dismantling emissions for IGU removal: "
+        f"{f3(dismantling_only_kgco2)} kg CO2e"
+    )
+
+    include_stillage = prompt_yes_no(
+        "\nInclude stillage manufacturing emissions?",
+        default=INCLUDE_STILLAGE_EMBODIED,
+    )
+    processes.include_stillage_embodied = include_stillage
+
+    print("\nSelect truck emission factor preset:")
+    print("  eu_legacy    = 0.06 kgCO2e/tkm  (older diesel trucks)")
+    print("  eu_current   = 0.04 kgCO2e/tkm  (current EU average)")
+    print("  best_diesel  = 0.03 kgCO2e/tkm  (best-in-class diesel)")
+    print("  ze_truck     = 0.0075 kgCO2e/tkm (electric truck, grid mix)")
+
+    truck_preset = prompt_choice(
+        "Truck emission preset",
+        ["eu_legacy", "eu_current", "best_diesel", "ze_truck"],
+        default="eu_current",
+    )
+
+    if truck_preset == "eu_legacy":
+        route.emissionfactor_truck = 0.06
+    elif truck_preset == "eu_current":
+        route.emissionfactor_truck = 0.04
+    elif truck_preset == "best_diesel":
+        route.emissionfactor_truck = 0.03
+    elif truck_preset == "ze_truck":
+        route.emissionfactor_truck = 0.0075
+
+    route.emissionfactor_ferry = EMISSIONFACTOR_FERRY
+
+    print(
+        f"\nUsing truck emission factor: {route.emissionfactor_truck} kg CO2e/tkm "
+        f"(preset: {truck_preset})"
+    )
+    print(
+        f"Using ferry emission factor: {route.emissionfactor_ferry} kg CO2e/tkm\n"
+    )
+
+    print("Select observed breakage rate during on-site removal.")
+    print("  very_low = 0.5% of IGUs")
+    print("  low      = 1% of IGUs")
+    print("  medium   = 3% of IGUs")
+    print("  high     = 5% of IGUs")
+
+    breakage_preset = prompt_choice(
+        "Breakage rate preset",
+        ["very_low", "low", "medium", "high"],
+        default="very_low",
+    )
+
+    if breakage_preset == "very_low":
+        processes.breakage_rate_global = 0.005
+    elif breakage_preset == "low":
+        processes.breakage_rate_global = 0.01
+    elif breakage_preset == "medium":
+        processes.breakage_rate_global = 0.03
+    elif breakage_preset == "high":
+        processes.breakage_rate_global = 0.05
+
+    print(
+        f"Using breakage rate: {processes.breakage_rate_global * 100:.2f}% "
+        "of eligible IGUs\n"
+    )
+
     phaseA = compute_phase_A(route, processes, [group])
     stats_A = phaseA["stats"]   # type: ignore[assignment]
     masses_A = phaseA["masses"] # type: ignore[assignment]
 
-    print("\n=== Phase A: up to transport to processor ===")
+    print("=== Phase A: up to transport to processor ===")
     print(f"  On-site dismantling : {f3(phaseA['dismantling_kgco2'])} kg CO2e")
     print(f"  Packaging           : {f3(phaseA['packaging_kgco2'])} kg CO2e")
     print(f"  Transport A         : {f3(phaseA['transport_A_kgco2'])} kg CO2e")
@@ -788,88 +795,4 @@ if __name__ == "__main__":
     print(f"  Average area per IGU     : {f3(stats_A['average_area_per_igu'])} m²")
     print(f"  Avg mass per IGU         : {f3(masses_A['avg_mass_per_igu_kg'])} kg")
     print(f"  Truck distance A (eff.)  : {f3(phaseA['truck_A_km_eff'])} km")
-    print(f"  Mass on truck A          : {f3(phaseA['mass_A_t'])} t")
-
-    # Branching
-    print("\nNow select processing approach at the processor.")
-    process_level_str = prompt_choice(
-        "Processing approach (after processor)", ["component", "system"], default="component"
-    )
-    system_path_str: SystemPath = "reuse"
-
-    if process_level_str == "system":
-        system_path_str = prompt_choice(
-            "System path", ["reuse", "repurpose"], default="reuse"
-        )  # type: ignore[assignment]
-
-        if system_path_str == "repurpose":
-            print("\nSelect repurposing intensity preset (kg CO2e per m² of glass processed):")
-            print("  light  = low-intervention (cleaning, minor repairs, fittings)")
-            print("  medium = moderate rework (cutting, edge finishing, some drilling)")
-            print("  heavy  = intensive rework (e.g. tempering, fritting, major adaptation)")
-
-            repurpose_preset_str = prompt_choice(
-                "Repurposing preset", ["light", "medium", "heavy"], default="medium"
-            )
-
-            if repurpose_preset_str == "light":
-                processes.repurpose_kgco2_per_m2 = REPURPOSE_LIGHT_KGCO2_PER_M2
-            elif repurpose_preset_str == "medium":
-                processes.repurpose_kgco2_per_m2 = REPURPOSE_MEDIUM_KGCO2_PER_M2
-            elif repurpose_preset_str == "heavy":
-                processes.repurpose_kgco2_per_m2 = REPURPOSE_HEAVY_KGCO2_PER_M2
-
-            processes.repurpose_preset = repurpose_preset_str  # type: ignore[assignment]
-
-    processes.process_level = process_level_str  # type: ignore[assignment]
-    processes.system_path = system_path_str      # type: ignore[assignment]
-
-    batch = BatchInput(route=route, processes=processes, igu_groups=[group])
-    breakdown = compute_full_emissions(batch)
-
-    print("\n=== Full emission breakdown ===")
-    stages = [
-        ("On-site dismantling", breakdown.on_site_dismantling_kgco2),
-        ("Packaging",           breakdown.packaging_kgco2),
-        ("Transport A",         breakdown.transport_A_kgco2),
-        ("Disassembly",         breakdown.disassembly_kgco2),
-        ("Remanufacturing",     breakdown.remanufacturing_kgco2),
-        ("Transport B",         breakdown.transport_B_kgco2),
-    ]
-
-    for name, value in stages:
-        share = (
-            100.0 * value / breakdown.total_kgco2
-            if breakdown.total_kgco2 > 0.0 else 0.0
-        )
-        print(f"  {name:18s}: {f3(value)} kg CO2e ({f3(share)} %)")
-
-    print(f"  Total               : {f3(breakdown.total_kgco2)} kg CO2e")
-
-    extra = breakdown.extra
-    total_igus_extra = extra.get("total_igus", 0.0)
-    reman_igus_extra = extra.get("remanufactured_igus", 0.0)
-    reman_area_m2 = extra.get("remanufactured_area_m2", 0.0)
-
-    per_input_igu = (
-        breakdown.total_kgco2 / total_igus_extra if total_igus_extra > 0 else 0.0
-    )
-    per_reman_igu = (
-        breakdown.total_kgco2 / reman_igus_extra if reman_igus_extra > 0 else 0.0
-    )
-    per_reman_m2 = (
-        breakdown.total_kgco2 / reman_area_m2 if reman_area_m2 > 0 else 0.0
-    )
-
-    print("\nIntensities:")
-    print(f"  Per IGU (input batch)    : {f3(per_input_igu)} kg CO2e / IGU")
-    print(f"  Per IGU (remanufactured) : {f3(per_reman_igu)} kg CO2e / IGU")
-    print(f"  Per m² remanufactured    : {f3(per_reman_m2)} kg CO2e / m²")
-
-    print("\nTechnical extra stats (rounded):")
-    for key in sorted(extra.keys()):
-        val = extra[key]
-        if isinstance(val, float):
-            print(f"  {key:25s}: {f3(val)}")
-        else:
-            print(f"  {key:25s}: {val}")
+    print(f"  Mass on truck A          : {f3(phaseA['mass_A_t'])} t\n")
