@@ -17,9 +17,17 @@ GEOCODER_USER_AGENT = "igu-reuse-tool/0.1 (CHANGE_THIS_TO_YOUR_EMAIL@DOMAIN)"
 E_SITE_KGCO2_PER_M2 = 0.15
 
 # Energy / emissions for later steps
-# These are simple starting values. 
-REMANUFACTURING_KGCO2_PER_M2 = 7.5   # kg CO2e per m² remanufactured glass
+# These are simple starting values.
+REMANUFACTURING_KGCO2_PER_M2 = 7.5   # kg CO2e per m² remanufactured glass (component route)
 DISASSEMBLY_KGCO2_PER_M2 = 0.5       # kg CO2e per m² for system disassembly
+
+# Repurposing presets (system-level, IGUs kept as IGUs but reworked/upcycled)
+# These are order-of-magnitude values based on typical energy use
+# for tempering / secondary processing (a few kWh/m²) and EU grid factors,
+# compared to flat glass / IGU EPD values.
+REPURPOSE_LIGHT_KGCO2_PER_M2 = 0.5   # cleaning, minor repairs, fittings
+REPURPOSE_MEDIUM_KGCO2_PER_M2 = 1.0  # cutting, edge working, some drilling
+REPURPOSE_HEAVY_KGCO2_PER_M2 = 2.0   # intensive rework incl. tempering / fritting
 
 # Stillage manufacturing and lifetime
 # We treat stillages as reusable racks. This part is OPTIONAL.
@@ -81,6 +89,7 @@ EdgeSealCondition = Literal["ok", "damaged", "unknown"]
 RouteMode = Literal["truck_only", "truck+ferry"]
 ProcessLevel = Literal["component", "system"]
 SystemPath = Literal["reuse", "repurpose"]
+RepurposePreset = Literal["light", "medium", "heavy"]
 
 # ============================================================================
 # DATA CLASSES
@@ -128,6 +137,9 @@ class ProcessSettings:
     e_site_kgco2_per_m2: float = E_SITE_KGCO2_PER_M2
     # Whether to include stillage manufacturing emissions
     include_stillage_embodied: bool = INCLUDE_STILLAGE_EMBODIED
+    # Repurposing intensity (system path = "repurpose")
+    repurpose_preset: RepurposePreset = "medium"
+    repurpose_kgco2_per_m2: float = REPURPOSE_MEDIUM_KGCO2_PER_M2
 
 
 @dataclass
@@ -405,16 +417,27 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     stats = aggregate_igu_groups(batch.igu_groups, batch.processes)
     masses = compute_masses(batch.igu_groups, stats)
 
+    # Stillages A: always based on eligible IGUs sent to processor
     n_stillages_A = (
         ceil(stats["eligible_igus"] / batch.processes.igus_per_stillage)
         if batch.processes.igus_per_stillage > 0
         else 0
     )
-    n_stillages_B = (
-        ceil(stats["remanufactured_igus"] / batch.processes.igus_per_stillage)
-        if batch.processes.igus_per_stillage > 0
-        else 0
-    )
+
+    # Stillages B: depends on whether we are in component or system route
+    if batch.processes.igus_per_stillage > 0:
+        if batch.processes.process_level == "component":
+            # B-leg carries remanufactured IGUs
+            n_stillages_B = ceil(
+                stats["remanufactured_igus"] / batch.processes.igus_per_stillage
+            )
+        else:
+            # System-level: B-leg carries intact IGUs that remain usable
+            n_stillages_B = ceil(
+                stats["eligible_igus"] / batch.processes.igus_per_stillage
+            )
+    else:
+        n_stillages_B = 0
 
     stillage_mass_A_kg = n_stillages_A * batch.processes.stillage_mass_empty_kg
     stillage_mass_B_kg = n_stillages_B * batch.processes.stillage_mass_empty_kg
@@ -443,7 +466,13 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     ferry_B_km *= batch.route.backhaul_factor
 
     mass_A_t = (masses["eligible_mass_kg"] + stillage_mass_A_kg) / 1000.0
-    mass_B_t = (masses["remanufactured_mass_kg"] + stillage_mass_B_kg) / 1000.0
+
+    if batch.processes.process_level == "component":
+        # Component route: mass B based on remanufactured IGUs
+        mass_B_t = (masses["remanufactured_mass_kg"] + stillage_mass_B_kg) / 1000.0
+    else:
+        # System route (reuse or repurpose): mass B based on eligible IGUs
+        mass_B_t = (masses["eligible_mass_kg"] + stillage_mass_B_kg) / 1000.0
 
     transport_A_kgco2 = mass_A_t * (
         truck_A_km * batch.route.emissionfactor_truck
@@ -454,24 +483,28 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
         + ferry_B_km * batch.route.emissionfactor_ferry
     )
 
-    # System-level disassembly
+    # System-level disassembly (only for process_level == "system")
     disassembly_kgco2 = 0.0
     if batch.processes.process_level == "system":
         disassembly_kgco2 = stats["eligible_area_m2"] * DISASSEMBLY_KGCO2_PER_M2
 
-    # Remanufacturing
+    # Processing / remanufacturing / repurposing
     remanufacturing_kgco2 = 0.0
     if batch.processes.process_level == "component":
+        # Component route: full remanufacturing of IGUs from recovered panes
         remanufacturing_kgco2 = (
             stats["remanufactured_area_m2"] * REMANUFACTURING_KGCO2_PER_M2
         )
     elif batch.processes.process_level == "system":
         if batch.processes.system_path == "reuse":
-            remanufacturing_kgco2 = (
-                stats["remanufactured_area_m2"] * REMANUFACTURING_KGCO2_PER_M2
-            )
-        elif batch.processes.system_path == "repurpose":
+            # System reuse: no heavy processing beyond disassembly, handled above.
             remanufacturing_kgco2 = 0.0
+        elif batch.processes.system_path == "repurpose":
+            # System repurpose: IGUs kept but reworked (cutting, tempering, etc.).
+            repurpose_area_m2 = stats["eligible_area_m2"]
+            remanufacturing_kgco2 = (
+                repurpose_area_m2 * batch.processes.repurpose_kgco2_per_m2
+            )
 
     quality_control_kgco2 = 0.0  # placeholder for future steps
 
@@ -500,6 +533,8 @@ def compute_full_emissions(batch: BatchInput) -> EmissionBreakdown:
     extra["process_level"] = batch.processes.process_level  # type: ignore[assignment]
     extra["system_path"] = batch.processes.system_path      # type: ignore[assignment]
     extra["packaging_per_igu_kgco2"] = pkg_per_igu
+    extra["repurpose_preset"] = batch.processes.repurpose_preset  # type: ignore[assignment]
+    extra["repurpose_kgco2_per_m2"] = batch.processes.repurpose_kgco2_per_m2
 
     return EmissionBreakdown(
         on_site_dismantling_kgco2=dismantling_kgco2,
@@ -761,10 +796,30 @@ if __name__ == "__main__":
         "Processing approach (after processor)", ["component", "system"], default="component"
     )
     system_path_str: SystemPath = "reuse"
+
     if process_level_str == "system":
         system_path_str = prompt_choice(
             "System path", ["reuse", "repurpose"], default="reuse"
         )  # type: ignore[assignment]
+
+        if system_path_str == "repurpose":
+            print("\nSelect repurposing intensity preset (kg CO2e per m² of glass processed):")
+            print("  light  = low-intervention (cleaning, minor repairs, fittings)")
+            print("  medium = moderate rework (cutting, edge finishing, some drilling)")
+            print("  heavy  = intensive rework (e.g. tempering, fritting, major adaptation)")
+
+            repurpose_preset_str = prompt_choice(
+                "Repurposing preset", ["light", "medium", "heavy"], default="medium"
+            )
+
+            if repurpose_preset_str == "light":
+                processes.repurpose_kgco2_per_m2 = REPURPOSE_LIGHT_KGCO2_PER_M2
+            elif repurpose_preset_str == "medium":
+                processes.repurpose_kgco2_per_m2 = REPURPOSE_MEDIUM_KGCO2_PER_M2
+            elif repurpose_preset_str == "heavy":
+                processes.repurpose_kgco2_per_m2 = REPURPOSE_HEAVY_KGCO2_PER_M2
+
+            processes.repurpose_preset = repurpose_preset_str  # type: ignore[assignment]
 
     processes.process_level = process_level_str  # type: ignore[assignment]
     processes.system_path = system_path_str      # type: ignore[assignment]
