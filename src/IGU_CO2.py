@@ -72,7 +72,7 @@ GlassType = Literal["annealed", "tempered", "laminated"]
 CoatingType = Literal["none", "hard_lowE", "soft_lowE", "solar_control"]
 SealantType = Literal["polysulfide", "polyurethane", "silicone", "combination", "combi"]
 SpacerMaterial = Literal["aluminium", "steel", "warm_edge_composite"]
-EdgeSealCondition = Literal["ok", "damaged", "unknown"]
+EdgeSealCondition = Literal["acceptable", "unacceptable", "not assessed"]
 
 # TransportMode defines the mode of transport for route configurations.
 # "HGV lorry"       = road-only
@@ -330,7 +330,7 @@ def aggregate_igu_groups(
         # Define "acceptable" IGUs for reuse (no cracks, acceptable edge seal, no fogging, reuse allowed).
         if g.condition.reuse_allowed and not g.condition.cracks_chips:
             if (
-                g.condition.visible_edge_seal_condition != "damaged"
+                g.condition.visible_edge_seal_condition != "unacceptable"
                 and not g.condition.visible_fogging
             ):
                 acceptable_igus += g.quantity
@@ -897,7 +897,7 @@ if __name__ == "__main__":
         )
 
     edge_cond_str = prompt_choice(
-        "Visible edge seal condition", ["ok", "damaged", "unknown"], default="ok"
+        "Visible edge seal condition", ["acceptable", "unacceptable", "not assessed"], default="acceptable"
     )
     fogging = prompt_yes_no("Visible fogging?", default=False)
     cracks = prompt_yes_no("Cracks or chips present?", default=False)
@@ -1095,12 +1095,17 @@ if __name__ == "__main__":
             )
             raise SystemExit(0)
 
-        print("\nProvide the location where the IGUs will be reused.\n")
-        reuse_location = prompt_location("reuse destination (system reuse)")
-        transport.reuse = reuse_location
+        print("\nReuse destination set to ORIGIN (same building reuse).\n")
+        transport.reuse = transport.origin
+
+        repair_needed = prompt_yes_no("Does the IGU system require repair?", default=False)
+        if repair_needed:
+             print("  -> System requires repair (note: specific repair emissions not yet modelled separately).")
+        else:
+             print("  -> No system repair required.")
 
         print("\nUpdated reuse destination:")
-        print(f"  Reuse location: {reuse_location.lat:.6f}, {reuse_location.lon:.6f}\n")
+        print(f"  Reuse location: {transport.reuse.lat:.6f}, {transport.reuse.lon:.6f}\n")
 
         system_B = compute_system_transport_B(transport, processes, stats_ctp, masses_ctp)
 
