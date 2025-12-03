@@ -63,6 +63,15 @@ INSTALL_SYSTEM_KGCO2_PER_M2 = 0.25
 
 DECIMALS = 3
 
+# ============================================================================
+# MODELLING ASSUMPTIONS (SEALANT)
+# ============================================================================
+# Secondary seal thickness is driven by the cavity thickness:
+# 1. Double glazing: secondary_seal_thickness_mm = cavity_thickness_mm
+# 2. Triple glazing: secondary_seal_thickness_mm = max(cavity_thickness_mm, cavity_thickness_2_mm)
+# 3. Single glazing: secondary_seal_thickness_mm = 0.0 (no gas cavity)
+
+
 # RepurposePreset defines the intensity preset for repurposing IGUs.
 # It is used to select the appropriate CO2e per m² factor.
 RepurposePreset = Literal["light", "medium", "heavy"]
@@ -169,9 +178,28 @@ class IGUCondition:
 
 
 @dataclass
+class SealGeometry:
+    """
+    Global seal geometry settings (constant for all IGUs in the batch).
+    - primary_thickness_mm: Thickness of the primary seal (e.g. butyl).
+    - primary_width_mm: Width of the primary seal.
+    - secondary_width_mm: Width of the secondary seal.
+    
+    Note: Secondary seal *thickness* is not constant; it is derived from the
+    IGU's cavity thickness(es) using the modelling rules defined above.
+    """
+    primary_thickness_mm: float
+    primary_width_mm: float
+    secondary_width_mm: float
+
+
+
+@dataclass
 class IGUGroup:
     """
     Describes a homogeneous group of IGUs with identical geometry, build-up and condition.
+    Note: cavity_thickness_mm (and cavity_thickness_2_mm) are used both for the
+    IGU build-up depth and to derive the secondary seal thickness.
     """
     quantity: int
     unit_width_mm: float
@@ -191,6 +219,7 @@ class IGUGroup:
     mass_per_m2_override: Optional[float] = None
     thickness_centre_mm: Optional[float] = None   # pane thickness (centre, triple)
     cavity_thickness_2_mm: Optional[float] = None # second cavity thickness (triple)
+    sealant_type_primary: Optional[SealantType] = None  # Metadata only
 
 
 @dataclass
@@ -422,6 +451,63 @@ def packaging_factor_per_igu(processes: ProcessSettings) -> float:
     return STILLAGE_MANUFACTURE_KGCO2 / (
         STILLAGE_LIFETIME_CYCLES * processes.igus_per_stillage
     )
+
+
+# ============================================================================
+# SEALANT VOLUME HELPERS
+# ============================================================================
+
+def secondary_seal_thickness_mm_for_group(g: IGUGroup) -> float:
+    """
+    Derive the secondary seal thickness based on glazing type and cavity thickness.
+    Rules:
+      - Double: equals cavity_thickness_mm
+      - Triple: equals max(cavity_thickness_mm, cavity_thickness_2_mm)
+      - Single: 0.0
+    """
+    if g.glazing_type == "single":
+        return 0.0
+    elif g.glazing_type == "double":
+        return g.cavity_thickness_mm
+    elif g.glazing_type == "triple":
+        c1 = g.cavity_thickness_mm
+        c2 = g.cavity_thickness_2_mm if g.cavity_thickness_2_mm is not None else 0.0
+        return max(c1, c2)
+    else:
+        raise ValueError(f"Unsupported glazing type for seal calculation: {g.glazing_type}")
+
+
+def compute_sealant_volumes(group: IGUGroup, seal: SealGeometry) -> Dict[str, float]:
+    """
+    Compute primary and secondary sealant volumes for an IGU group.
+    Returns a dict with per-IGU and total volumes (m3).
+    """
+    # 1. Dimensions in metres
+    W_m = group.unit_width_mm / 1000.0
+    H_m = group.unit_height_mm / 1000.0
+    perimeter_m = 2.0 * (W_m + H_m)
+
+    # 2. Primary seal (constant cross-section)
+    # Area = thickness * width
+    A_primary_m2 = (seal.primary_thickness_mm / 1000.0) * (seal.primary_width_mm / 1000.0)
+    V_primary_igu_m3 = perimeter_m * A_primary_m2
+
+    # 3. Secondary seal (derived thickness * constant width)
+    t_sec_mm = secondary_seal_thickness_mm_for_group(group)
+    A_secondary_m2 = (t_sec_mm / 1000.0) * (seal.secondary_width_mm / 1000.0)
+    V_secondary_igu_m3 = perimeter_m * A_secondary_m2
+
+    # 4. Totals
+    V_primary_total_m3 = V_primary_igu_m3 * group.quantity
+    V_secondary_total_m3 = V_secondary_igu_m3 * group.quantity
+
+    return {
+        "primary_volume_per_igu_m3": V_primary_igu_m3,
+        "secondary_volume_per_igu_m3": V_secondary_igu_m3,
+        "primary_volume_total_m3": V_primary_total_m3,
+        "secondary_volume_total_m3": V_secondary_total_m3,
+        "secondary_thickness_mm": t_sec_mm,
+    }
 
 
 # ============================================================================
@@ -803,6 +889,25 @@ if __name__ == "__main__":
     processes.route_A_mode = route_A_mode_str  # type: ignore[assignment]
     processes.route_B_mode = route_B_mode_str  # type: ignore[assignment]
 
+    print("\nDefine global seal geometry (constant for all IGUs).")
+    p_th_str = input("Primary seal thickness (mm) [constant]: ").strip()
+    p_wd_str = input("Primary seal width (mm) [constant]: ").strip()
+    s_wd_str = input("Secondary seal width (mm) [constant]: ").strip()
+
+    try:
+        seal_p_th = float(p_th_str)
+        seal_p_wd = float(p_wd_str)
+        seal_s_wd = float(s_wd_str)
+    except ValueError:
+        print("Invalid numeric input for seal geometry.")
+        raise SystemExit(1)
+
+    seal_geometry = SealGeometry(
+        primary_thickness_mm=seal_p_th,
+        primary_width_mm=seal_p_wd,
+        secondary_width_mm=seal_s_wd,
+    )
+
     print("Now describe the IGU batch.\n")
     total_igus_str = input("Total number of IGUs in this batch: ").strip()
     width_str = input("Width of each IGU in mm (unit_width_mm): ").strip()
@@ -936,7 +1041,11 @@ if __name__ == "__main__":
         mass_per_m2_override=None,
         thickness_centre_mm=thickness_centre_mm,
         cavity_thickness_2_mm=cavity_thickness_2_mm,
+        sealant_type_primary=None, # Not asked in CLI yet
     )
+
+    # Compute sealant volumes for this group
+    seal_vols = compute_sealant_volumes(group, seal_geometry)
 
     stats_initial = aggregate_igu_groups([group], processes)
     total_IGU_surface_area_m2_initial = stats_initial["total_IGU_surface_area_m2"]
@@ -1046,6 +1155,16 @@ if __name__ == "__main__":
     print(f"  Avg mass per IGU               : {f3(masses_ctp['avg_mass_per_igu_kg'])} kg")
     print(f"  HGV lorry distance A (eff.)    : {f3(stage_ctp['truck_A_km_eff'])} km")
     print(f"  Mass on HGV lorry A            : {f3(stage_ctp['mass_A_t'])} t\n")
+
+    print("Sealant geometry and volumes:")
+    print(f"  Primary seal thickness         : {seal_geometry.primary_thickness_mm} mm")
+    print(f"  Primary seal width             : {seal_geometry.primary_width_mm} mm")
+    print(f"  Secondary seal width           : {seal_geometry.secondary_width_mm} mm")
+    print(f"  Secondary seal thickness       : {seal_vols['secondary_thickness_mm']} mm (derived from cavity)")
+    print(f"  Primary seal volume per IGU    : {f3(seal_vols['primary_volume_per_igu_m3'])} m³")
+    print(f"  Secondary seal volume per IGU  : {f3(seal_vols['secondary_volume_per_igu_m3'])} m³")
+    print(f"  Primary seal volume (total)    : {f3(seal_vols['primary_volume_total_m3'])} m³")
+    print(f"  Secondary seal volume (total)  : {f3(seal_vols['secondary_volume_total_m3'])} m³\n")
 
     print("Next, select the processing route after the processor.\n")
     route_choice = prompt_choice(
