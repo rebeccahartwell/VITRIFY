@@ -2,3 +2,4 @@ requests
 pandas
 xlsxwriter
 openpyxl
+colorama
