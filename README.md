@@ -87,4 +87,6 @@ d:\VITRIFY\
 
 ## License
 
-[License Information Here]
+This project is licensed under a proprietary license. 
+All rights reserved. Unauthorized copying, modification, distribution, or use of this software is strictly prohibited.
+See the [LICENSE](LICENSE) file for details.
