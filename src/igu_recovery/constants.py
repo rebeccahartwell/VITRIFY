@@ -62,6 +62,10 @@ ROUTE_B_MODE = "HGV lorry+ferry"    # Road + ferry mixed mode
 # Installation energy for system routes (kg CO2e per m² of glass installed)
 INSTALL_SYSTEM_KGCO2_PER_M2 = 0.25
 
+# Densities
+GLASS_DENSITY_KG_M3 = 2500.0
+SEALANT_DENSITY_KG_M3 = 1500.0
+
 DECIMALS = 3
 
 # ============================================================================

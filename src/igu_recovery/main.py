@@ -11,7 +11,7 @@ from .models import (
 )
 from .utils.input_helpers import (
     prompt_choice, prompt_location, prompt_igu_source, define_igu_system_from_manual,
-    ask_igu_condition_and_eligibility, print_igu_geometry_overview, print_scenario_overview
+    ask_igu_condition_and_eligibility, print_igu_geometry_overview, print_scenario_overview, print_header
 )
 from .utils.calculations import (
     aggregate_igu_groups, compute_igu_mass_totals
@@ -32,7 +32,7 @@ def main():
     setup_logging(console_level=logging.INFO)
     
     # 2. PROCESS START BANNER
-    logger.info("IGU recovery environmental impact prototype – Start\n")
+    print_header("IGU recovery environmental impact prototype – Start")
     
     processes = ProcessSettings()
     
@@ -44,7 +44,7 @@ def main():
     group, seal_geometry = define_igu_system_from_manual()
     
     # 4. LOCATION DEFINITION
-    logger.info("\n--- Step 3: Locations & Transport Configuration ---")
+    print_header("Step 3: Locations & Transport Configuration")
     origin = prompt_location("project origin (Dismantling from Building / on-site removal)")
     processor = prompt_location("processor location (main processing site)")
     
@@ -56,7 +56,7 @@ def main():
     logger.info(f"  Processor: {processor.lat:.6f}, {processor.lon:.6f}")
     
     # Transport Modes
-    logger.info("\nSelect Transport Modes:")
+    print("Select Transport Modes:")
     route_A_mode_str = prompt_choice(
         "Route A transport mode (origin → processor)",
         ["HGV lorry", "HGV lorry+ferry"],
@@ -106,7 +106,7 @@ def main():
     masses = compute_igu_mass_totals([group], stats)
     
     # 7. RECOVERY SCENARIO SELECTION
-    logger.info("\n--- Step 7: Recovery Scenario Selection ---")
+    print_header("Step 7: Recovery Scenario Selection")
     logger.info("Select one of the following scenarios:")
     logger.info("  a) System Reuse (Dismantle -> Transport -> Repair -> Transport -> Install)")
     logger.info("  b) Component Reuse (Dismantle -> Disassemble -> Recondition -> Assemble -> Install)")

@@ -13,7 +13,7 @@ from .models import (
 from .utils.calculations import (
     apply_yield_loss, compute_route_distances, packaging_factor_per_igu
 )
-from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice
+from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice, print_header, style_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,11 @@ def run_scenario_system_reuse(
     """
     Scenario (a): System Reuse
     """
-    logger.info("\n--- Running Scenario: System Reuse ---")
+    logger.info("Running Scenario: System Reuse")
+    print_header("Scenario (a): System Reuse")
     
     # a) On-Site Removal + Yield
-    yield_removal_str = input("% yield loss at on-site removal (0-100) [default=0]: ").strip()
+    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
     yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
@@ -126,10 +127,11 @@ def run_scenario_component_reuse(
     """
     Scenario (b): Component Reuse
     """
-    logger.info("\n--- Running Scenario: Component Reuse ---")
+    logger.info("Running Scenario: Component Reuse")
+    print_header("Scenario (b): Component Reuse")
     
     # a) On-Site Removal
-    yield_removal_str = input("% yield loss at on-site removal (0-100) [default=0]: ").strip()
+    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
     yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
@@ -155,19 +157,19 @@ def run_scenario_component_reuse(
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
     
     # Disassembly Emissions
-    # FIX: Use flow_post_disassembly (post-yield) area, not pre-yield flow_post_removal
+    # Used flow_post_disassembly (post-yield) area
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     
     # d) Recondition
     recondition = prompt_yes_no("Is recondition of components required?", default=True)
     recond_kgco2 = 0.0
     if recondition:
-        recond_factor_str = input("Recondition emissions (kgCO2e/m²) [default=0]: ").strip()
+        recond_factor_str = input(style_prompt("Recondition emissions (kgCO2e/m²) [default=0]: ")).strip()
         recond_factor = float(recond_factor_str) if recond_factor_str else 0.0
         recond_kgco2 = flow_post_disassembly.area_m2 * recond_factor
     
     # e) Assembly IGU
-    assembly_factor_str = input("Assembly emissions (kgCO2e/m²) [default=0]: ").strip()
+    assembly_factor_str = input(style_prompt("Assembly emissions (kgCO2e/m²) [default=0]: ")).strip()
     assembly_factor = float(assembly_factor_str) if assembly_factor_str else 0.0
     assembly_kgco2 = flow_post_disassembly.area_m2 * assembly_factor
     
@@ -188,7 +190,10 @@ def run_scenario_component_reuse(
     mass_B_t = (flow_post_disassembly.mass_kg + stillage_mass_B_kg) / 1000.0
     transport_B_kgco2 = mass_B_t * (truck_B_km * transport.emissionfactor_truck + ferry_B_km * transport.emissionfactor_ferry)
     
-    total = dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + disassembly_kgco2 + recond_kgco2 + assembly_kgco2 + transport_B_kgco2
+    # Installation
+    install_kgco2 = flow_post_disassembly.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+    
+    total = dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + disassembly_kgco2 + recond_kgco2 + assembly_kgco2 + transport_B_kgco2 + install_kgco2
     
     by_stage = {
         "Dismantling (E_site)": dismantling_kgco2,
@@ -197,7 +202,8 @@ def run_scenario_component_reuse(
         "Disassembly": disassembly_kgco2,
         "Recondition": recond_kgco2,
         "Assembly": assembly_kgco2,
-        "Transport B": transport_B_kgco2
+        "Transport B": transport_B_kgco2,
+        "Installation": install_kgco2
     }
     
     return ScenarioResult(
@@ -224,10 +230,11 @@ def run_scenario_component_repurpose(
     """
     Scenario (c): Component Repurpose
     """
-    logger.info("\n--- Running Scenario: Component Repurpose ---")
+    logger.info("Running Scenario: Component Repurpose")
+    print_header("Scenario (c): Component Repurpose")
     
     # a) On-Site Removal
-    yield_removal_str = input("% yield loss at on-site removal (0-100) [default=0]: ").strip()
+    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
     yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
@@ -249,7 +256,7 @@ def run_scenario_component_repurpose(
     logger.info("Applying 10% yield loss for disassembly (repurpose).")
     DISASSEMBLY_YIELD = 0.10
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
-    # FIX: Use flow_post_disassembly (post-yield) area
+    # Used flow_post_disassembly (post-yield) area
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     
     # e) Repurpose Intensity
@@ -279,7 +286,10 @@ def run_scenario_component_repurpose(
     mass_B_t = (flow_post_disassembly.mass_kg + stillage_mass_B_kg) / 1000.0
     transport_B_kgco2 = mass_B_t * (truck_B_km * transport.emissionfactor_truck + ferry_B_km * transport.emissionfactor_ferry)
     
-    total = dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + disassembly_kgco2 + repurpose_kgco2 + transport_B_kgco2
+    # Installation
+    install_kgco2 = flow_post_disassembly.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+    
+    total = dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + disassembly_kgco2 + repurpose_kgco2 + transport_B_kgco2 + install_kgco2
     
     by_stage = {
         "Dismantling (E_site)": dismantling_kgco2,
@@ -287,7 +297,8 @@ def run_scenario_component_repurpose(
         "Transport A": transport_A_kgco2,
         "Disassembly": disassembly_kgco2,
         "Repurposing": repurpose_kgco2,
-        "Transport B": transport_B_kgco2
+        "Transport B": transport_B_kgco2,
+        "Installation": install_kgco2
     }
     
     return ScenarioResult(
@@ -313,7 +324,8 @@ def run_scenario_closed_loop_recycling(
     """
     Scenario (d): Closed-loop Recycling
     """
-    logger.info("\n--- Running Scenario: Closed-loop Recycling ---")
+    logger.info("Running Scenario: Closed-loop Recycling")
+    print_header("Scenario (d): Closed-loop Recycling")
     
     # a) Intact decision
     send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
@@ -323,11 +335,11 @@ def run_scenario_closed_loop_recycling(
     yield_break = 0.0
     
     # Standard removal yield
-    yield_removal_str = input("% yield loss at on-site removal (0-100) [default=0]: ").strip()
+    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
     yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     if not send_intact:
-        yield_break_str = input("% yield loss at breaking (0-100) [default=0]: ").strip()
+        yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
         yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
     
     flow_step1 = apply_yield_loss(flow_start, yield_removal)
@@ -338,7 +350,7 @@ def run_scenario_closed_loop_recycling(
     breaking_kgco2 = 0.0
     if not send_intact:
         # Ask for breaking emissions
-        br_factor_str = input("Breaking emissions (kgCO2e/m²) [default=0]: ").strip()
+        br_factor_str = input(style_prompt("Breaking emissions (kgCO2e/m²) [default=0]: ")).strip()
         br_factor = float(br_factor_str) if br_factor_str else 0.0
         breaking_kgco2 = flow_step1.area_m2 * br_factor
         
@@ -402,7 +414,8 @@ def run_scenario_open_loop_recycling(
     """
     Scenario (e): Open-loop Recycling
     """
-    logger.info("\n--- Running Scenario: Open-loop Recycling ---")
+    logger.info("Running Scenario: Open-loop Recycling")
+    print_header("Scenario (e): Open-loop Recycling")
     
     # a) Intact vs break
     send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
@@ -410,11 +423,11 @@ def run_scenario_open_loop_recycling(
     # yield
     yield_removal = 0.0
     yield_break = 0.0
-    yield_removal_str = input("% yield loss at on-site removal (0-100) [default=0]: ").strip()
+    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
     yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     if not send_intact:
-        yield_break_str = input("% yield loss at breaking (0-100) [default=0]: ").strip()
+        yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
         yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
     
     flow_step1 = apply_yield_loss(flow_start, yield_removal)
@@ -423,7 +436,7 @@ def run_scenario_open_loop_recycling(
     dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
     breaking_kgco2 = 0.0
     if not send_intact:
-         br_factor_str = input("Breaking emissions (kgCO2e/m²) [default=0]: ").strip()
+         br_factor_str = input(style_prompt("Breaking emissions (kgCO2e/m²) [default=0]: ")).strip()
          br_factor = float(br_factor_str) if br_factor_str else 0.0
          breaking_kgco2 = flow_step1.area_m2 * br_factor
 
@@ -449,11 +462,6 @@ def run_scenario_open_loop_recycling(
     model_transport = prompt_yes_no("Model transport to glasswool/container plants?", default=False)
     open_loop_transport_kgco2 = 0.0
     
-    # Calculate Transport B (to Processor/Aggregator if any leg exists before splitting?)
-    # In this logic, we assume 'Transport A' brings it to a processor, and 'Open Loop Transport' is effectively the 'Transport B' legs to final recyclers.
-    # However, if there was a separate Transport B step to a central cullet plant before splitting, it's missing here.
-    # The existing code treats "Open Loop Transport" as the secondary leg.
-    
     if model_transport:
         gw_plant = prompt_location("Glasswool plant")
         cont_plant = prompt_location("Container glass plant")
@@ -464,18 +472,8 @@ def run_scenario_open_loop_recycling(
         dist_gw = compute_route_distances(tr_gw)
         mass_gw_t = (flow_step2.mass_kg * CULLET_CW_SHARE) / 1000.0
         
-        # FIX: Include potential ferry if relevant logic allows, though tr_gw defaults to generic. 
-        # But wait, compute_route_distances relies on processes mode or defaults? 
-        # Actually compute_route_distances looks at transport locations.
-        # We need to know the MODE for these legs. The code here assumes truck only in the original.
-        # Use simpler fix: add ferry capability if we assume route_B_mode applies to these legs.
-        
         ferry_gw_km = 0.0
         if processes.route_B_mode == "HGV lorry+ferry":
-             # We need to manually invoke distance calculation that splits ferry?
-             # compute_route_distances returns a dict with keys. 
-             # Let's check what it returns: 'truck_A_km', 'ferry_A_km', 'truck_B_km', 'ferry_B_km'.
-             # Since we passed reuse=gw_plant, it will calculate the 'B' leg distances.
              ferry_gw_km = dist_gw["ferry_B_km"]
         
         e_gw = mass_gw_t * (dist_gw["truck_B_km"] * transport.emissionfactor_truck + ferry_gw_km * transport.emissionfactor_ferry)

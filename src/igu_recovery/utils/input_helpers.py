@@ -5,7 +5,48 @@ from ..models import Location, IGUGroup, SealGeometry, SealantType, IGUCondition
 from ..constants import GEOCODER_USER_AGENT, DECIMALS
 from .calculations import aggregate_igu_groups, compute_igu_mass_totals, compute_sealant_volumes, default_mass_per_m2
 
+# COLORAMA SETUP
+try:
+    import colorama
+    from colorama import Fore, Style, Back
+    colorama.init(autoreset=True)
+    HAS_COLORABLE_CLI = True
+except ImportError:
+    HAS_COLORABLE_CLI = False
+    class Fore:
+        CYAN = ""
+        YELLOW = ""
+        GREEN = ""
+        RED = ""
+        WHITE = ""
+        MAGENTA = ""
+        BLUE = ""
+    class Style:
+        BRIGHT = ""
+        RESET_ALL = ""
+    class Back:
+        BLACK = ""
+
 logger = logging.getLogger(__name__)
+
+# Style Constants
+C_HEADER = Fore.CYAN + Style.BRIGHT
+C_PROMPT = Fore.YELLOW
+C_CHOICE = Fore.MAGENTA
+C_ERROR = Fore.RED
+C_SUCCESS = Fore.GREEN
+C_RESET = Style.RESET_ALL
+
+def style_prompt(prompt_text: str) -> str:
+    """Helper to wrap input prompt in color."""
+    return f"{C_PROMPT}{prompt_text}{C_RESET}"
+
+def print_header(text: str):
+    """Print a styled header."""
+    # We use print directly for visual flair, bypassing the logger formatter which might be green
+    print(f"\n{C_HEADER}{'='*60}")
+    print(f"{text.center(60)}")
+    print(f"{'='*60}{C_RESET}")
 
 def geocode_address(address: str) -> Optional[Location]:
     """
@@ -51,7 +92,7 @@ def prompt_location(label: str) -> Location:
     Prompt user for either a free-text address or a 'lat,lon' pair and return a Location.
     """
     while True:
-        s = input(f"Enter {label} address or 'lat,lon': ").strip()
+        s = input(style_prompt(f"Enter {label} address or 'lat,lon': ")).strip()
         if not s:
             continue
         loc = try_parse_lat_lon(s)
@@ -68,16 +109,37 @@ def prompt_location(label: str) -> Location:
 def prompt_choice(label: str, options: List[str], default: str) -> str:
     """
     Prompt user to pick one value from a list of options; returns the chosen option.
+    Supports selecting by index (1-based) or typing the name.
     """
-    opts_str = "/".join(options)
+    # Build display string with indices: [1] opt1 / [2] opt2
+    display_parts = []
+    for idx, opt in enumerate(options, 1):
+        display_parts.append(f"[{C_SUCCESS}{idx}{C_PROMPT}] {C_CHOICE}{opt}{C_PROMPT}")
+    
+    opts_str = " / ".join(display_parts)
+    
     while True:
-        s = input(f"{label} [{opts_str}] (default={default}): ").strip().lower()
+        # Show options differently if there are many? For now inline is fine.
+        print(f"\n{C_PROMPT}{label} options:{C_RESET} {opts_str}")
+        s = input(style_prompt(f"Select option (name or number) [default={default}]: ")).strip().lower()
+        
         if not s:
             return default
+            
+        # Check if digit
+        if s.isdigit():
+            idx = int(s)
+            if 1 <= idx <= len(options):
+                choice = options[idx-1]
+                # print(f"{C_PROMPT}Selected: {C_SUCCESS}{choice}{C_RESET}")
+                return choice
+        
+        # Check text match
         for opt in options:
             if s == opt.lower():
                 return opt
-        logger.warning(f"Invalid choice. Please choose one of: {opts_str}")
+                
+        logger.warning(f"Invalid choice '{s}'. Please enter a number 1-{len(options)} or the option name.")
 
 
 def prompt_yes_no(label: str, default: bool) -> bool:
@@ -85,8 +147,10 @@ def prompt_yes_no(label: str, default: bool) -> bool:
     Prompt user for yes/no answer, returning True/False.
     """
     d = "y" if default else "n"
+    # Colorize defaults
+    opts = f"{C_CHOICE}y{C_PROMPT}/{C_CHOICE}n{C_PROMPT}"
     while True:
-        s = input(f"{label} [y/n] (default={d}): ").strip().lower()
+        s = input(style_prompt(f"{label} [{opts}] (default={d}): ")).strip().lower()
         if not s:
             return default
         if s in ("y", "yes"):
@@ -100,7 +164,7 @@ def prompt_igu_source() -> str:
     """
     Step 2: Ask for IGU source (manual vs database).
     """
-    logger.info("\n--- Step 1: IGU Source Selection ---")
+    print_header("Step 1: IGU Source Selection")
     source = prompt_choice("Select IGU definition source", ["manual", "database"], default="manual")
     
     if source == "database":
@@ -119,19 +183,19 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     Step 3: Define IGU system (geometry + build-up + materials) manually.
     Prompts user for all IGU parameters and constructs the IGUGroup and SealGeometry.
     """
-    logger.info("\n--- Step 2: IGU System Definition (Manual) ---")
+    print_header("Step 2: IGU System Definition (Manual)")
     
-    logger.info("\nDefine global seal geometry (constant for all IGUs).")
-    p_th_str = input("Primary seal thickness (mm) [constant]: ").strip()
-    p_wd_str = input("Primary seal width (mm) [constant]: ").strip()
-    s_wd_str = input("Secondary seal width (mm) [constant]: ").strip()
+    print(f"\n{C_HEADER}Define global seal geometry (constant for all IGUs){C_RESET}")
+    p_th_str = input(style_prompt("Primary seal thickness (mm) [constant]: ")).strip()
+    p_wd_str = input(style_prompt("Primary seal width (mm) [constant]: ")).strip()
+    s_wd_str = input(style_prompt("Secondary seal width (mm) [constant]: ")).strip()
 
     try:
         seal_p_th = float(p_th_str)
         seal_p_wd = float(p_wd_str)
         seal_s_wd = float(s_wd_str)
     except ValueError:
-        logger.info("Invalid numeric input for seal geometry.")
+        logger.error("Invalid numeric input for seal geometry.")
         raise SystemExit(1)
 
     seal_geometry = SealGeometry(
@@ -140,17 +204,17 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         secondary_width_mm=seal_s_wd,
     )
 
-    logger.info("\nNow describe the IGU batch geometry.\n")
-    total_igus_str = input("Total number of IGUs in this batch: ").strip()
-    width_str = input("Width of each IGU in mm (unit_width_mm): ").strip()
-    height_str = input("Height of each IGU in mm (unit_height_mm): ").strip()
+    print(f"\n{C_HEADER}Now describe the IGU batch geometry{C_RESET}")
+    total_igus_str = input(style_prompt("Total number of IGUs in this batch: ")).strip()
+    width_str = input(style_prompt("Width of each IGU in mm (unit_width_mm): ")).strip()
+    height_str = input(style_prompt("Height of each IGU in mm (unit_height_mm): ")).strip()
 
     try:
         total_igus = int(total_igus_str)
         unit_width_mm = float(width_str)
         unit_height_mm = float(height_str)
     except ValueError:
-        logger.info("Invalid numeric input for IGU count or dimensions.")
+        logger.error("Invalid numeric input for IGU count or dimensions.")
         raise SystemExit(1)
 
     glazing_type_str = prompt_choice(
@@ -179,11 +243,11 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     )
 
     if glazing_type_str == "single":
-        pane_th_str = input("Pane thickness (mm): ").strip()
+        pane_th_str = input(style_prompt("Pane thickness (mm): ")).strip()
         try:
             pane_thickness_single_mm = float(pane_th_str)
         except ValueError:
-            logger.info("Invalid numeric input for pane thickness.")
+            logger.error("Invalid numeric input for pane thickness.")
             raise SystemExit(1)
 
         pane_thickness_outer_mm = pane_thickness_single_mm
@@ -194,15 +258,15 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         IGU_depth_mm_val = pane_thickness_single_mm
 
     elif glazing_type_str == "double":
-        outer_th_str = input("Outer pane thickness (mm): ").strip()
-        inner_th_str = input("Inner pane thickness (mm): ").strip()
-        cavity1_str = input("Cavity thickness (mm): ").strip()
+        outer_th_str = input(style_prompt("Outer pane thickness (mm): ")).strip()
+        inner_th_str = input(style_prompt("Inner pane thickness (mm): ")).strip()
+        cavity1_str = input(style_prompt("Cavity thickness (mm): ")).strip()
         try:
             pane_thickness_outer_mm = float(outer_th_str)
             pane_thickness_inner_mm = float(inner_th_str)
             cavity_thickness_1_mm = float(cavity1_str)
         except ValueError:
-            logger.info("Invalid numeric input for pane or cavity thickness.")
+            logger.error("Invalid numeric input for pane or cavity thickness.")
             raise SystemExit(1)
         thickness_centre_mm = None
         cavity_thickness_2_mm = None
@@ -211,11 +275,11 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         )
 
     else:  # glazing_type_str == "triple"
-        outer_th_str = input("Outer pane thickness (mm): ").strip()
-        middle_th_str = input("Centre pane thickness (mm): ").strip()
-        inner_th_str = input("Inner pane thickness (mm): ").strip()
-        cavity1_str = input("First cavity thickness (mm): ").strip()
-        cavity2_str = input("Second cavity thickness (mm): ").strip()
+        outer_th_str = input(style_prompt("Outer pane thickness (mm): ")).strip()
+        middle_th_str = input(style_prompt("Centre pane thickness (mm): ")).strip()
+        inner_th_str = input(style_prompt("Inner pane thickness (mm): ")).strip()
+        cavity1_str = input(style_prompt("First cavity thickness (mm): ")).strip()
+        cavity2_str = input(style_prompt("Second cavity thickness (mm): ")).strip()
         try:
             pane_thickness_outer_mm = float(outer_th_str)
             thickness_centre_mm = float(middle_th_str)
@@ -223,7 +287,7 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
             cavity_thickness_1_mm = float(cavity1_str)
             cavity_thickness_2_mm = float(cavity2_str)
         except ValueError:
-            logger.info("Invalid numeric input for pane or cavity thickness.")
+            logger.error("Invalid numeric input for pane or cavity thickness.")
             raise SystemExit(1)
         IGU_depth_mm_val = (
             pane_thickness_outer_mm
@@ -265,10 +329,9 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         sealant_type_primary=None,
     )
     
-    logger.info("\n--- IGU System Defined ---")
-    logger.info(f"  Quantity: {group.quantity}, Size: {group.unit_width_mm}x{group.unit_height_mm} mm")
-    logger.info(f"  Type: {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
-    logger.info(f"  Build-up: {group.thickness_outer_mm} / {group.cavity_thickness_mm} / {group.thickness_inner_mm} (plus centre if triple)")
+    print_header("IGU System Defined")
+    print(f"  {C_PROMPT}Quantity:{C_RESET} {group.quantity}, Size: {group.unit_width_mm}x{group.unit_height_mm} mm")
+    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
     
     return group, seal_geometry
 
@@ -277,7 +340,7 @@ def ask_igu_condition_and_eligibility() -> IGUCondition:
     """
     Step 6: Conditions and eligibility questions.
     """
-    logger.info("\n--- Step 6: Conditions & Eligibility ---")
+    print_header("Step 6: Conditions & Eligibility")
     
     edge_cond_str = prompt_choice(
         "Visible edge seal condition", ["acceptable", "unacceptable", "not assessed"], default="acceptable"
@@ -286,7 +349,7 @@ def ask_igu_condition_and_eligibility() -> IGUCondition:
     cracks = prompt_yes_no("Cracks or chips present?", default=False)
     reuse_allowed = prompt_yes_no("Reuse allowed by owner/regulations?", default=True)
 
-    age_str = input("Approximate age of IGUs in years (default=20): ").strip()
+    age_str = input(style_prompt("Approximate age of IGUs in years (default=20): ")).strip()
     try:
         age_years = float(age_str) if age_str else 20.0
     except ValueError:
@@ -306,7 +369,7 @@ def print_igu_geometry_overview(group: IGUGroup, seal_geometry: SealGeometry, pr
     Step 5: Geometry information and build-up overview.
     Calculates and prints geometric properties, masses, and sealant volumes.
     """
-    logger.info("\n--- Step 5: Geometry & Materials Overview ---")
+    print_header("Step 5: Geometry & Materials Overview")
     
     # 1. Compute stats
     # Note: Using a list with one group for aggregation
@@ -314,59 +377,62 @@ def print_igu_geometry_overview(group: IGUGroup, seal_geometry: SealGeometry, pr
     masses = compute_igu_mass_totals([group], stats)
     seal_vols = compute_sealant_volumes(group, seal_geometry)
     
-    logger.info(f"IGU Geometric Properties:")
-    logger.info(f"  Dimensions: {group.unit_width_mm} mm x {group.unit_height_mm} mm")
-    logger.info(f"  Depth:      {group.IGU_depth_mm} mm")
-    logger.info(f"  Area (1):   {stats['average_area_per_igu']:.3f} m²")
-    logger.info(f"  Area (all): {stats['total_IGU_surface_area_m2']:.3f} m² (Total Batch)")
+    # We can use standard logs but user might want colors here too.
+    # Let's simple print styled lines.
     
-    logger.info(f"\nBuild-up & Materials:")
-    logger.info(f"  Glazing:    {group.glazing_type}")
-    logger.info(f"  Glass:      {group.glass_type_outer} (outer), {group.glass_type_inner} (inner)")
+    print(f"{C_HEADER}IGU Geometric Properties:{C_RESET}")
+    print(f"  Dimensions: {group.unit_width_mm} mm x {group.unit_height_mm} mm")
+    print(f"  Depth:      {group.IGU_depth_mm} mm")
+    print(f"  Area (1):   {stats['average_area_per_igu']:.3f} m²")
+    print(f"  Area (all): {stats['total_IGU_surface_area_m2']:.3f} m² (Total Batch)")
+    
+    print(f"\n{C_HEADER}Build-up & Materials:{C_RESET}")
+    print(f"  Glazing:    {group.glazing_type}")
+    print(f"  Glass:      {group.glass_type_outer} (outer), {group.glass_type_inner} (inner)")
     if group.thickness_centre_mm:
-         logger.info(f"              {group.thickness_centre_mm} mm (centre)")
-    logger.info(f"  Cavity:     {group.cavity_thickness_mm} mm")
+         print(f"              {group.thickness_centre_mm} mm (centre)")
+    print(f"  Cavity:     {group.cavity_thickness_mm} mm")
     if group.cavity_thickness_2_mm:
-        logger.info(f"              {group.cavity_thickness_2_mm} mm (2nd cavity)")
-    logger.info(f"  Spacer:     {group.spacer_material}")
-    logger.info(f"  Sealants:   Primary={seal_geometry.primary_thickness_mm}x{seal_geometry.primary_width_mm}mm")
-    logger.info(f"              Secondary Type={group.sealant_type_secondary}, Width={seal_geometry.secondary_width_mm}mm")
-    logger.info(f"              Sec. Thickness={seal_vols['secondary_thickness_mm']} mm (derived)")
+        print(f"              {group.cavity_thickness_2_mm} mm (2nd cavity)")
+    print(f"  Spacer:     {group.spacer_material}")
+    print(f"  Sealants:   Primary={seal_geometry.primary_thickness_mm}x{seal_geometry.primary_width_mm}mm")
+    print(f"              Secondary Type={group.sealant_type_secondary}, Width={seal_geometry.secondary_width_mm}mm")
+    print(f"              Sec. Thickness={seal_vols['secondary_thickness_mm']} mm (derived)")
     
-    logger.info(f"\nMass Information:")
-    logger.info(f"  Per m²:     {default_mass_per_m2(group.glazing_type)} kg/m² (approx)")
-    logger.info(f"  Per IGU:    {masses['avg_mass_per_igu_kg']:.2f} kg")
-    logger.info(f"  Total Batch:{masses['total_mass_t']:.3f} tonnes")
+    print(f"\n{C_HEADER}Mass Information:{C_RESET}")
+    print(f"  Per m²:     {default_mass_per_m2(group.glazing_type)} kg/m² (approx)")
+    print(f"  Per IGU:    {masses['avg_mass_per_igu_kg']:.2f} kg")
+    print(f"  Total Batch:{masses['total_mass_t']:.3f} tonnes")
     
-    logger.info(f"\nSealant Volumes (Total Batch):")
-    logger.info(f"  Primary:    {seal_vols['primary_volume_total_m3']:.4f} m³")
-    logger.info(f"  Secondary:  {seal_vols['secondary_volume_total_m3']:.4f} m³")
+    print(f"\n{C_HEADER}Sealant Volumes (Total Batch):{C_RESET}")
+    print(f"  Primary:    {seal_vols['primary_volume_total_m3']:.4f} m³")
+    print(f"  Secondary:  {seal_vols['secondary_volume_total_m3']:.4f} m³")
 
 
 def print_scenario_overview(result: ScenarioResult):
     """
     Common reporting for all scenarios.
     """
-    logger.info(f"\n========================================================")
-    logger.info(f"   SCENARIO RESULT: {result.scenario_name.upper()}")
-    logger.info(f"========================================================")
+    print(f"\n{Back.BLACK}{C_HEADER}{'='*60}")
+    print(f"   SCENARIO RESULT: {result.scenario_name.upper()}")
+    print(f"{'='*60}{Style.RESET_ALL}")
     
-    logger.info(f"\nYield Summary:")
-    logger.info(f"  Initial Acceptable IGUs: {result.initial_igus:.0f}")
-    logger.info(f"  Initial Area:            {result.initial_area_m2:.3f} m²")
-    logger.info(f"  Final Output IGUs/Units: {result.final_igus:.0f}")
-    logger.info(f"  Final Output Area:       {result.final_area_m2:.3f} m²")
-    logger.info(f"  Yield (Area basis):      {result.yield_percent:.1f}%")
-    logger.info(f"  Initial Mass:            {result.initial_mass_kg/1000.0:.3f} t")
-    logger.info(f"  Final Mass:              {result.final_mass_kg/1000.0:.3f} t")
+    print(f"\n{C_HEADER}Yield Summary:{C_RESET}")
+    print(f"  Initial Acceptable IGUs: {result.initial_igus:.0f}")
+    print(f"  Initial Area:            {result.initial_area_m2:.3f} m²")
+    print(f"  Final Output IGUs/Units: {result.final_igus:.0f}")
+    print(f"  Final Output Area:       {result.final_area_m2:.3f} m²")
+    print(f"  Yield (Area basis):      {result.yield_percent:.1f}%")
+    print(f"  Initial Mass:            {result.initial_mass_kg/1000.0:.3f} t")
+    print(f"  Final Mass:              {result.final_mass_kg/1000.0:.3f} t")
     
-    logger.info(f"\nCarbon Emissions (kg CO2e):")
+    print(f"\n{C_HEADER}Carbon Emissions (kg CO2e):{C_RESET}")
     for stage, val in result.by_stage.items():
-        logger.info(f"  {stage:<30} : {val:.3f}")
+        print(f"  {stage:<30} : {val:.3f}")
     
-    logger.info(f"--------------------------------------------------------")
-    logger.info(f"  TOTAL EMISSIONS              : {result.total_emissions_kgco2:.3f} kg CO2e")
+    print(f"{'-'*60}")
+    print(f"  {Style.BRIGHT}TOTAL EMISSIONS              : {C_SUCCESS}{result.total_emissions_kgco2:.3f}{C_RESET} {Style.BRIGHT}kg CO2e{C_RESET}")
     
     if result.final_area_m2 > 0:
-         logger.info(f"  Intensity (per output m²)    : {result.total_emissions_kgco2 / result.final_area_m2:.3f} kgCO2e/m²")
-    logger.info(f"========================================================\n")
+         print(f"  Intensity (per output m²)    : {result.total_emissions_kgco2 / result.final_area_m2:.3f} kgCO2e/m²")
+    print(f"{'='*60}\n")
