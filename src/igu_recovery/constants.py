@@ -1,95 +1,97 @@
 from typing import Literal
+from .config import load_excel_config
 
 # ============================================================================
 # SETTINGS & CONSTANTS
 # ============================================================================
 
-GEOCODER_USER_AGENT = "igu-reuse-tool/0.1 (CHANGE_THIS_TO_YOUR_EMAIL@DOMAIN)"
+# Load configuration immediately (blocking)
+# We expect project_parameters.xlsx to exist and be fully populated.
+_config = load_excel_config()
 
-# Dismantling from Building (on-site removal) energy factor:
-# kg CO2e per m² of IGU surface area removed from the existing building.
-E_SITE_KGCO2_PER_M2 = 0.15
+# Helper to fetch with strict error if missing
+# This replaces hardcoded default values.
+def _get(key):
+    if key not in _config:
+        # We allow GEOCODER_USER_AGENT to fall back or be hardcoded if not in excel, 
+        # but for calculation factors requested by user, we crash.
+        # Exception: types and literals are handled below.
+        raise KeyError(f"Missing required parameter '{key}' in project_parameters.xlsx")
+    return _config[key]
 
-REMANUFACTURING_KGCO2_PER_M2 = 7.5
-DISASSEMBLY_KGCO2_PER_M2 = 0.5
+GEOCODER_USER_AGENT = _config.get("GEOCODER_USER_AGENT", "igu-reuse-tool/0.1 (CHANGE_THIS_TO_YOUR_EMAIL@DOMAIN)")
 
-REPURPOSE_LIGHT_KGCO2_PER_M2 = 0.5
-REPURPOSE_MEDIUM_KGCO2_PER_M2 = 1.0
-REPURPOSE_HEAVY_KGCO2_PER_M2 = 2.0
+# Dismantling / Site
+E_SITE_KGCO2_PER_M2 = _get("E_SITE_KGCO2_PER_M2")
 
-# Repair (System Reuse) - e.g. resealing, valve replacement, cleaning
-REPAIR_KGCO2_PER_M2 = 0.5
+# Processing / Repurposing
+REMANUFACTURING_KGCO2_PER_M2 = _get("REMANUFACTURING_KGCO2_PER_M2")
+DISASSEMBLY_KGCO2_PER_M2 = _get("DISASSEMBLY_KGCO2_PER_M2")
+REPURPOSE_LIGHT_KGCO2_PER_M2 = _get("REPURPOSE_LIGHT_KGCO2_PER_M2")
+REPURPOSE_MEDIUM_KGCO2_PER_M2 = _get("REPURPOSE_MEDIUM_KGCO2_PER_M2")
+REPURPOSE_HEAVY_KGCO2_PER_M2 = _get("REPURPOSE_HEAVY_KGCO2_PER_M2")
 
-STILLAGE_MANUFACTURE_KGCO2 = 500.0
-STILLAGE_LIFETIME_CYCLES = 100
-INCLUDE_STILLAGE_EMBODIED = False
+# Repair
+REPAIR_KGCO2_PER_M2 = _get("REPAIR_KGCO2_PER_M2")
 
-# Emission factors in kgCO2e per tonne·km (tkm).
-# These are GWP (CO2-equivalent) intensities, where:
-# - "tonne" is the transported payload mass (IGUs + stillages) in metric tonnes
-# - "km" is the distance travelled between the relevant locations (origin/processor/reuse)
-# Updated to align with DEFRA 2024 Factors (Average Laden HGV / Ro-Ro Freight Ferry)
-EMISSIONFACTOR_TRUCK = 0.098   # kgCO2e/tkm (HGV lorry, avg laden)
-EMISSIONFACTOR_FERRY = 0.129   # kgCO2e/tkm (Ro-Ro ferry freight)
+# Stillage
+STILLAGE_MANUFACTURE_KGCO2 = _get("STILLAGE_MANUFACTURE_KGCO2")
+STILLAGE_LIFETIME_CYCLES = _get("STILLAGE_LIFETIME_CYCLES")
+INCLUDE_STILLAGE_EMBODIED = _get("INCLUDE_STILLAGE_EMBODIED")
 
-BACKHAUL_FACTOR = 1.3
+# Transport Factors
+EMISSIONFACTOR_TRUCK = _get("EMISSIONFACTOR_TRUCK")
+EMISSIONFACTOR_FERRY = _get("EMISSIONFACTOR_FERRY")
+BACKHAUL_FACTOR = _get("BACKHAUL_FACTOR")
 
-TRUCK_CAPACITY_T = 20.0
-FERRY_CAPACITY_T = 1000.0
+# Capacities
+TRUCK_CAPACITY_T = _get("TRUCK_CAPACITY_T")
+FERRY_CAPACITY_T = _get("FERRY_CAPACITY_T")
 
-DISTANCE_FALLBACK_A_KM = 100.0
-DISTANCE_FALLBACK_B_KM = 100.0
+# Defaults
+DISTANCE_FALLBACK_A_KM = _get("DISTANCE_FALLBACK_A_KM")
+DISTANCE_FALLBACK_B_KM = _get("DISTANCE_FALLBACK_B_KM")
 
-# Approximate surface mass of IGUs by glazing type (kg/m²).
-# Single: approx. 4 mm float glass (~10 kg/m²).
-MASS_PER_M2_SINGLE = 10.0
-MASS_PER_M2_DOUBLE = 20.0
-MASS_PER_M2_TRIPLE = 30.0
+# IGU Masses
+MASS_PER_M2_SINGLE = _get("MASS_PER_M2_SINGLE")
+MASS_PER_M2_DOUBLE = _get("MASS_PER_M2_DOUBLE")
+MASS_PER_M2_TRIPLE = _get("MASS_PER_M2_TRIPLE")
 
-BREAKAGE_RATE_GLOBAL = 0.05
-HUMIDITY_FAILURE_RATE = 0.05
-SPLIT_YIELD = 0.95
-REMANUFACTURING_YIELD = 0.90
+# Yield / Failure Rates
+BREAKAGE_RATE_GLOBAL = _get("BREAKAGE_RATE_GLOBAL")
+HUMIDITY_FAILURE_RATE = _get("HUMIDITY_FAILURE_RATE")
+SPLIT_YIELD = _get("SPLIT_YIELD")
+REMANUFACTURING_YIELD = _get("REMANUFACTURING_YIELD")
 
-IGUS_PER_STILLAGE = 20
-STILLAGE_MASS_EMPTY_KG = 300.0
-MAX_TRUCK_LOAD_KG = 20000.0
+# Logistics
+IGUS_PER_STILLAGE = _get("IGUS_PER_STILLAGE")
+STILLAGE_MASS_EMPTY_KG = _get("STILLAGE_MASS_EMPTY_KG")
+MAX_TRUCK_LOAD_KG = _get("MAX_TRUCK_LOAD_KG")
 
-# Default transport modes for A-leg (building → processor) and B-leg (processor → 2nd site).
-ROUTE_A_MODE = "HGV lorry"          # Road-only
-ROUTE_B_MODE = "HGV lorry+ferry"    # Road + ferry mixed mode
+# Modes (Strings)
+ROUTE_A_MODE = _get("ROUTE_A_MODE")
+ROUTE_B_MODE = _get("ROUTE_B_MODE")
 
-# Installation energy for system routes (kg CO2e per m² of glass installed)
-INSTALL_SYSTEM_KGCO2_PER_M2 = 0.25
+# Installation
+INSTALL_SYSTEM_KGCO2_PER_M2 = _get("INSTALL_SYSTEM_KGCO2_PER_M2")
 
 # Densities
-GLASS_DENSITY_KG_M3 = 2500.0
-SEALANT_DENSITY_KG_M3 = 1500.0
+GLASS_DENSITY_KG_M3 = _get("GLASS_DENSITY_KG_M3")
+SEALANT_DENSITY_KG_M3 = _get("SEALANT_DENSITY_KG_M3")
 
-DECIMALS = 3
+DECIMALS = _get("DECIMALS")
 
 # ============================================================================
-# TYPES
+# TYPES (Code constructs, not excel parameters)
 # ============================================================================
 
-# RepurposePreset defines the intensity preset for repurposing IGUs.
-# It is used to select the appropriate CO2e per m² factor.
 RepurposePreset = Literal["light", "medium", "heavy"]
-
 GlazingType = Literal["double", "triple", "single"]
 GlassType = Literal["annealed", "tempered", "laminated"]
 CoatingType = Literal["none", "hard_lowE", "soft_lowE", "solar_control"]
 SealantType = Literal["polysulfide", "polyurethane", "silicone", "combination", "combi"]
 SpacerMaterial = Literal["aluminium", "steel", "warm_edge_composite"]
 EdgeSealCondition = Literal["acceptable", "unacceptable", "not assessed"]
-
-# TransportMode defines the mode of transport for route configurations.
-# "HGV lorry"       = road-only
-# "HGV lorry+ferry" = HGV lorry plus ferry leg(s).
 TransportMode = Literal["HGV lorry", "HGV lorry+ferry"]
-
-# ProcessLevel indicates whether calculations are at component or system level.
 ProcessLevel = Literal["component", "system"]
-
-# SystemPath indicates the overall system path: reuse or repurpose.
 SystemPath = Literal["reuse", "repurpose"]
