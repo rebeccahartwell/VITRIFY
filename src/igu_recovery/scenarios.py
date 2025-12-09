@@ -5,7 +5,8 @@ from typing import Dict, Tuple
 from .constants import (
     DISASSEMBLY_KGCO2_PER_M2,
     REPURPOSE_LIGHT_KGCO2_PER_M2, REPURPOSE_MEDIUM_KGCO2_PER_M2, REPURPOSE_HEAVY_KGCO2_PER_M2,
-    INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2
+    INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2,
+    REMANUFACTURING_KGCO2_PER_M2, RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_M2
 )
 from .models import (
     ProcessSettings, TransportModeConfig, IGUGroup, FlowState, ScenarioResult, Location
@@ -164,14 +165,12 @@ def run_scenario_component_reuse(
     recondition = prompt_yes_no("Is recondition of components required?", default=True)
     recond_kgco2 = 0.0
     if recondition:
-        recond_factor_str = input(style_prompt("Recondition emissions (kgCO2e/m²) [default=0]: ")).strip()
-        recond_factor = float(recond_factor_str) if recond_factor_str else 0.0
-        recond_kgco2 = flow_post_disassembly.area_m2 * recond_factor
+        logger.info(f"Applying reconditioning step with {RECONDITION_KGCO2_PER_M2} kgCO2e/m2")
+        recond_kgco2 = flow_post_disassembly.area_m2 * RECONDITION_KGCO2_PER_M2
     
     # e) Assembly IGU
-    assembly_factor_str = input(style_prompt("Assembly emissions (kgCO2e/m²) [default=0]: ")).strip()
-    assembly_factor = float(assembly_factor_str) if assembly_factor_str else 0.0
-    assembly_kgco2 = flow_post_disassembly.area_m2 * assembly_factor
+    # Use REMANUFACTURING constant for assembly step
+    assembly_kgco2 = flow_post_disassembly.area_m2 * REMANUFACTURING_KGCO2_PER_M2
     
     # f) Next location
     next_location = prompt_location("final installation location for reused IGUs")
@@ -349,10 +348,8 @@ def run_scenario_closed_loop_recycling(
     dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
     breaking_kgco2 = 0.0
     if not send_intact:
-        # Ask for breaking emissions
-        br_factor_str = input(style_prompt("Breaking emissions (kgCO2e/m²) [default=0]: ")).strip()
-        br_factor = float(br_factor_str) if br_factor_str else 0.0
-        breaking_kgco2 = flow_step1.area_m2 * br_factor
+        # Breaking emissions
+        breaking_kgco2 = flow_step1.area_m2 * BREAKING_KGCO2_PER_M2
         
     # d) Transport A
     distances = compute_route_distances(transport)
@@ -436,9 +433,7 @@ def run_scenario_open_loop_recycling(
     dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
     breaking_kgco2 = 0.0
     if not send_intact:
-         br_factor_str = input(style_prompt("Breaking emissions (kgCO2e/m²) [default=0]: ")).strip()
-         br_factor = float(br_factor_str) if br_factor_str else 0.0
-         breaking_kgco2 = flow_step1.area_m2 * br_factor
+         breaking_kgco2 = flow_step1.area_m2 * BREAKING_KGCO2_PER_M2
 
     # Transport A
     distances = compute_route_distances(transport)
