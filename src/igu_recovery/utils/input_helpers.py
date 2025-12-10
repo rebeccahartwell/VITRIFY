@@ -1,5 +1,8 @@
 import logging
 import requests
+import pandas as pd
+import re
+import os
 from typing import Optional, List, Tuple, Dict
 from ..models import Location, IGUGroup, SealGeometry, SealantType, IGUCondition, ProcessSettings, ScenarioResult, BatchInput, TransportModeConfig, FlowState
 from ..constants import GEOCODER_USER_AGENT, DECIMALS
@@ -166,25 +169,12 @@ def prompt_igu_source() -> str:
     """
     print_header("Step 1: IGU Source Selection")
     source = prompt_choice("Select IGU definition source", ["manual", "database"], default="manual")
-    
-    if source == "database":
-        # Placeholder for DB lookup
-        # db_id = input("Enter Saint-Gobain IGU product ID: ").strip()
-        logger.info("Saint Gobain Database Not Found")
-        logger.info("Falling back to manual definition.")
-        # Fallback to manual
-        return "manual"
-    
-    return "manual"
+    return source
 
-
-def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
+def prompt_seal_geometry() -> SealGeometry:
     """
-    Step 3: Define IGU system (geometry + build-up + materials) manually.
-    Prompts user for all IGU parameters and constructs the IGUGroup and SealGeometry.
+    Prompt for global seal geometry parameters.
     """
-    print_header("Step 2: IGU System Definition (Manual)")
-    
     print(f"\n{C_HEADER}Define global seal geometry (constant for all IGUs){C_RESET}")
     p_th_str = input(style_prompt("Primary seal thickness (mm) [constant]: ")).strip()
     p_wd_str = input(style_prompt("Primary seal width (mm) [constant]: ")).strip()
@@ -198,11 +188,21 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         logger.error("Invalid numeric input for seal geometry.")
         raise SystemExit(1)
 
-    seal_geometry = SealGeometry(
+    return SealGeometry(
         primary_thickness_mm=seal_p_th,
         primary_width_mm=seal_p_wd,
         secondary_width_mm=seal_s_wd,
     )
+
+
+def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
+    """
+    Step 3: Define IGU system (geometry + build-up + materials) manually.
+    Prompts user for all IGU parameters and constructs the IGUGroup and SealGeometry.
+    """
+    print_header("Step 2: IGU System Definition (Manual)")
+    
+    seal_geometry = prompt_seal_geometry()
 
     print(f"\n{C_HEADER}Now describe the IGU batch geometry{C_RESET}")
     total_igus_str = input(style_prompt("Total number of IGUs in this batch: ")).strip()
@@ -298,7 +298,6 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         )
     
     # Construct a temporary condition object to satisfy IGUGroup init (will be updated later)
-    # Using defaults/placeholders as condition is asked in a later step.
     temp_condition = IGUCondition(
         visible_edge_seal_condition="not assessed",
         visible_fogging=False,
@@ -332,6 +331,163 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     print_header("IGU System Defined")
     print(f"  {C_PROMPT}Quantity:{C_RESET} {group.quantity}, Size: {group.unit_width_mm}x{group.unit_height_mm} mm")
     print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
+    
+    return group, seal_geometry
+
+
+def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
+    """
+    Step 3 (DB): Load from Database, select product, and prompt for quantities.
+    """
+    print_header("Step 2: IGU System Definition (Database)")
+    db_path = r'd:\VITRIFY\data\saint_gobain\saint gobain product database.xlsx'
+    
+    if not os.path.exists(db_path):
+        logger.error(f"Database file not found at {db_path}")
+        raise FileNotFoundError(db_path)
+
+    # Load DB
+    try:
+        df = pd.read_excel(db_path)
+    except Exception as e:
+        logger.error(f"Error reading database: {e}")
+        raise SystemExit(1)
+        
+    # Check if we have 'win_name'.
+    if 'win_name' not in df.columns:
+         logger.error("Invalid database format: 'win_name' column missing.")
+         raise SystemExit(1)
+         
+    # Display Options
+    options = df['win_name'].tolist()
+    print(f"\n{C_HEADER}Available Products:{C_RESET}")
+    selected_name = prompt_choice("Select Product", options, default=options[0])
+    
+    # Get Row
+    row = df[df['win_name'] == selected_name].iloc[0]
+    
+    print(f"{C_SUCCESS}Selected: {row['win_name']} (Group: {row.get('Group/ID', 'N/A')}){C_RESET}")
+    
+    # Parse Data
+    # 1. Glazing Type
+    # DB has "Double" or "Triple". Model expects "double", "triple"
+    glazing_type = str(row.get('Glazing Type', 'double')).lower()
+    
+    # 2. Spacer
+    # DB: "Aluminum" -> Model "aluminium"
+    spacer_raw = str(row.get('Spacer Bar', 'aluminium')).lower()
+    spacer_material = "aluminium"
+    if "aluminum" in spacer_raw or "aluminium" in spacer_raw:
+        spacer_material = "aluminium"
+    elif "steel" in spacer_raw:
+        spacer_material = "steel"
+    elif "warm" in spacer_raw or "swiss" in spacer_raw:
+        spacer_material = "warm_edge_composite"
+        
+    # 3. Sealant
+    # DB: "Silicone" -> Model expects "silicone"
+    sealant_raw = str(row.get('Sealant', 'polysulfide')).lower()
+    sealant_type = "polysulfide"
+    # Basic matching
+    if "silicone" in sealant_raw: sealant_type = "silicone"
+    elif "polyurethane" in sealant_raw: sealant_type = "polyurethane"
+    
+    # 4. Coating
+    # Check 'Solar Coating' or 'Low E Coating'
+    # If anything other than "-" -> "soft_lowE" (assumption for modern coatings) or "solar_control"
+    solar = str(row.get('Solar Coating', '-'))
+    low_e = str(row.get('Low E Coating', '-'))
+    coating_type = "none"
+    if solar != '-' and len(solar) > 2:
+        coating_type = "solar_control"
+    elif low_e != '-' and len(low_e) > 2:
+        coating_type = "soft_lowE" # or hard_lowE, hard to tell from name alone without lookup
+        
+    # 5. Parse Unit thicknesses
+    # "DGU 6 | 16 | 6 mm"
+    unit_str = str(row.get('Unit', ''))
+    # Extract numbers
+    # Remove chars
+    cleaned = re.sub(r'[A-Za-z]', '', unit_str).strip()
+    parts = [p.strip() for p in cleaned.split('|') if p.strip()]
+    
+    # Defaults
+    t_outer = 6.0
+    t_inner = 6.0
+    t_mid = None
+    c1 = 16.0
+    c2 = None
+    
+    try:
+        if glazing_type == "double" and len(parts) >= 3:
+             t_outer = float(parts[0])
+             c1 = float(parts[1])
+             t_inner = float(parts[2])
+        elif glazing_type == "triple" and len(parts) >= 5:
+             t_outer = float(parts[0])
+             c1 = float(parts[1])
+             t_mid = float(parts[2])
+             c2 = float(parts[3])
+             t_inner = float(parts[4])
+    except ValueError:
+        logger.warning(f"Could not parse geometry from '{unit_str}'. Using defaults.")
+    
+    # Calculation of Depth
+    depth = t_outer + c1 + t_inner
+    if t_mid and c2:
+        depth += t_mid + c2
+        
+    # Prompt for missing info (Quantity + Dimensions + Seal Geometry)
+    seal_geometry = prompt_seal_geometry()
+
+    print(f"\n{C_HEADER}Enter Quantity and Dimensions for this batch{C_RESET}")
+    total_igus_str = input(style_prompt("Total number of IGUs: ")).strip()
+    width_str = input(style_prompt("Width (mm): ")).strip()
+    height_str = input(style_prompt("Height (mm): ")).strip()
+
+    try:
+        total_igus = int(total_igus_str)
+        unit_width_mm = float(width_str)
+        unit_height_mm = float(height_str)
+    except ValueError:
+        logger.error("Invalid numeric input.")
+        raise SystemExit(1)
+
+    # Temp condition
+    temp_condition = IGUCondition(
+        visible_edge_seal_condition="not assessed",
+        visible_fogging=False,
+        cracks_chips=False,
+        age_years=20.0,
+        reuse_allowed=True
+    )
+
+    group = IGUGroup(
+        quantity=total_igus,
+        unit_width_mm=unit_width_mm,
+        unit_height_mm=unit_height_mm,
+        glazing_type=glazing_type, # type: ignore
+        glass_type_outer="annealed", # Default as DB doesn't specify heat treatment per pane clearly enough yet
+        glass_type_inner="annealed",
+        coating_type=coating_type, # type: ignore
+        sealant_type_secondary=sealant_type, # type: ignore
+        spacer_material=spacer_material, # type: ignore
+        interlayer_type=None,
+        condition=temp_condition,
+        thickness_outer_mm=t_outer,
+        thickness_inner_mm=t_inner,
+        thickness_centre_mm=t_mid,
+        cavity_thickness_mm=c1,
+        cavity_thickness_2_mm=c2,
+        IGU_depth_mm=depth,
+        mass_per_m2_override=None,
+        sealant_type_primary=None
+    )
+    
+    print_header("IGU System Defined from Database")
+    print(f"  {C_PROMPT}Product:{C_RESET} {selected_name}")
+    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
+    print(f"  {C_PROMPT}Spacer:{C_RESET} {group.spacer_material}, Sealant: {group.sealant_type_secondary}")
     
     return group, seal_geometry
 

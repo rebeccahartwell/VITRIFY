@@ -11,7 +11,8 @@ from .models import (
 )
 from .utils.input_helpers import (
     prompt_choice, prompt_location, prompt_igu_source, define_igu_system_from_manual,
-    ask_igu_condition_and_eligibility, print_igu_geometry_overview, print_scenario_overview, print_header
+    define_igu_system_from_database, ask_igu_condition_and_eligibility, print_igu_geometry_overview,
+    print_scenario_overview, print_header
 )
 from .utils.calculations import (
     aggregate_igu_groups, compute_igu_mass_totals
@@ -40,8 +41,11 @@ def main():
     source_mode = prompt_igu_source()
     
     # 3. IGU SYSTEM DEFINITION
-    # (Since database is not implemented, we always fall through to manual)
-    group, seal_geometry = define_igu_system_from_manual()
+    if source_mode == "manual":
+        group, seal_geometry = define_igu_system_from_manual()
+    else:
+        # database
+        group, seal_geometry = define_igu_system_from_database()
     
     # 4. LOCATION DEFINITION
     print_header("Step 3: Locations & Transport Configuration")
