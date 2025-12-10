@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from ..constants import (
     DECIMALS, MASS_PER_M2_SINGLE, MASS_PER_M2_DOUBLE, MASS_PER_M2_TRIPLE,
     STILLAGE_LIFETIME_CYCLES, STILLAGE_MANUFACTURE_KGCO2,
+    GLASS_DENSITY_KG_M3, SEALANT_DENSITY_KG_M3, SPACER_MASS_PER_M_KG
 )
 from ..models import Location, TransportModeConfig, IGUGroup, ProcessSettings, SealGeometry, BatchInput, GlazingType, FlowState
 
@@ -272,3 +273,55 @@ def apply_yield_loss(state: FlowState, loss_fraction: float) -> FlowState:
         area_m2=state.area_m2 * keep_factor,
         mass_kg=state.mass_kg * keep_factor,
     )
+
+
+def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, float]:
+    """
+    Calculate total mass (kg) of Glass, Sealant, and Spacer for the group.
+    Returns:
+        {
+            "glass_kg": float,
+            "sealant_kg": float,
+            "spacer_kg": float
+        }
+    """
+    # Dimensions
+    W_m = group.unit_width_mm / 1000.0
+    H_m = group.unit_height_mm / 1000.0
+    area_per_igu = W_m * H_m
+    perimeter_m = 2.0 * (W_m + H_m)
+    qty = group.quantity
+
+    # 1. Glass Mass
+    # Sum of pane thicknesses
+    t_glass_mm = group.thickness_outer_mm + group.thickness_inner_mm
+    if group.glazing_type == "triple" and group.thickness_centre_mm:
+        t_glass_mm += group.thickness_centre_mm
+    
+    # Volume = Area * thickness
+    vol_glass_m3 = (t_glass_mm / 1000.0) * area_per_igu * qty
+    mass_glass_kg = vol_glass_m3 * GLASS_DENSITY_KG_M3
+
+    # 2. Sealant Mass
+    # Use existing volume helper
+    vols = compute_sealant_volumes(group, seal)
+    # Total volume (primary + secondary) for the whole group
+    vol_seal_total_m3 = vols["primary_volume_total_m3"] + vols["secondary_volume_total_m3"]
+    mass_sealant_kg = vol_seal_total_m3 * SEALANT_DENSITY_KG_M3
+
+    # 3. Spacer Mass
+    # Length = Perimeter * Cavities
+    cavities = 0
+    if group.glazing_type == "double":
+        cavities = 1
+    elif group.glazing_type == "triple":
+        cavities = 2
+    
+    total_spacer_len_m = perimeter_m * cavities * qty
+    mass_spacer_kg = total_spacer_len_m * SPACER_MASS_PER_M_KG
+
+    return {
+        "glass_kg": mass_glass_kg,
+        "sealant_kg": mass_sealant_kg,
+        "spacer_kg": mass_spacer_kg
+    }

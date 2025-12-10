@@ -135,7 +135,7 @@ def main():
         print_scenario_overview(result)
         
     elif scenario_choice == "component_reuse":
-        result = run_scenario_component_reuse(processes, transport, group, flow_start, stats)
+        result = run_scenario_component_reuse(processes, transport, group, seal_geometry, flow_start, stats)
         print_scenario_overview(result)
         
     elif scenario_choice == "component_repurpose":

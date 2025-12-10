@@ -6,13 +6,17 @@ from .constants import (
     DISASSEMBLY_KGCO2_PER_M2,
     REPURPOSE_LIGHT_KGCO2_PER_M2, REPURPOSE_MEDIUM_KGCO2_PER_M2, REPURPOSE_HEAVY_KGCO2_PER_M2,
     INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2,
-    REMANUFACTURING_KGCO2_PER_M2, RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_M2
+    REMANUFACTURING_KGCO2_PER_M2, RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_M2,
+    YIELD_REPAIR, YIELD_DISASSEMBLY_REUSE, YIELD_DISASSEMBLY_REPURPOSE,
+    SHARE_CULLET_FLOAT, SHARE_CULLET_OPEN_LOOP_GW, SHARE_CULLET_OPEN_LOOP_CONT,
+    EF_MAT_SPACER_ALU, EF_MAT_SPACER_STEEL, EF_MAT_SPACER_SWISS, EF_MAT_SEALANT,
+    PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
 )
 from .models import (
-    ProcessSettings, TransportModeConfig, IGUGroup, FlowState, ScenarioResult, Location
+    ProcessSettings, TransportModeConfig, IGUGroup, FlowState, ScenarioResult, Location, SealGeometry
 )
 from .utils.calculations import (
-    apply_yield_loss, compute_route_distances, packaging_factor_per_igu
+    apply_yield_loss, compute_route_distances, packaging_factor_per_igu, calculate_material_masses
 )
 from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice, print_header, style_prompt
 
@@ -66,8 +70,8 @@ def run_scenario_system_reuse(
     
     if repair_needed:
         # Yield loss 20%
-        logger.info("Applying 20% yield loss for repair process.")
-        flow_post_repair = apply_yield_loss(flow_post_removal, 0.20)
+        logger.info(f"Applying {YIELD_REPAIR*100}% yield loss for repair process.")
+        flow_post_repair = apply_yield_loss(flow_post_removal, YIELD_REPAIR)
         
         # Calculate repair emissions on the remaining area 
         repair_kgco2 = flow_post_repair.area_m2 * REPAIR_KGCO2_PER_M2
@@ -122,6 +126,7 @@ def run_scenario_component_reuse(
     processes: ProcessSettings,
     transport: TransportModeConfig,
     group: IGUGroup,
+    seal_geometry: SealGeometry,
     flow_start: FlowState,
     initial_stats: Dict[str, float]
 ) -> ScenarioResult:
@@ -153,8 +158,8 @@ def run_scenario_component_reuse(
     packaging_kgco2 = flow_post_removal.igus * packaging_factor_per_igu(processes)
 
     # c) System Disassembly (20% loss)
-    logger.info("Applying 20% yield loss for disassembly.")
-    DISASSEMBLY_YIELD = 0.20
+    logger.info(f"Applying {YIELD_DISASSEMBLY_REUSE*100}% yield loss for disassembly.")
+    DISASSEMBLY_YIELD = YIELD_DISASSEMBLY_REUSE
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
     
     # Disassembly Emissions
@@ -169,8 +174,32 @@ def run_scenario_component_reuse(
         recond_kgco2 = flow_post_disassembly.area_m2 * RECONDITION_KGCO2_PER_M2
     
     # e) Assembly IGU
-    # Use REMANUFACTURING constant for assembly step
-    assembly_kgco2 = flow_post_disassembly.area_m2 * REMANUFACTURING_KGCO2_PER_M2
+    # Material-based Calculation
+    # 1. Determine Spacer EF
+    ef_spacer = EF_MAT_SPACER_ALU # Default
+    if group.spacer_material == "aluminium": ef_spacer = EF_MAT_SPACER_ALU
+    elif group.spacer_material == "steel": ef_spacer = EF_MAT_SPACER_STEEL
+    elif group.spacer_material == "warm_edge_composite": ef_spacer = EF_MAT_SPACER_SWISS
+    
+    # 2. Determine Sealant EF
+    ef_sealant = EF_MAT_SEALANT
+
+    # 3. Calculate Mass of New Materials needed
+    # We calculate masses for the FULL group, then scale down by the current flow count
+    mat_masses = calculate_material_masses(group, seal_geometry)
+    scale_factor = flow_post_disassembly.igus / group.quantity if group.quantity > 0 else 0.0
+    
+    mass_spacer_needed_kg = mat_masses["spacer_kg"] * scale_factor
+    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+    
+    embodied_new_mat_kgco2 = (mass_spacer_needed_kg * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+    
+    # 4. Assembly Energy
+    process_energy_kgco2 = flow_post_disassembly.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+    
+    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
+    
+    logger.info(f"Assembly: Spacer {mass_spacer_needed_kg:.2f}kg, Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
     
     # f) Next location
     next_location = prompt_location("final installation location for reused IGUs")
@@ -252,8 +281,8 @@ def run_scenario_component_repurpose(
     packaging_kgco2 = flow_post_removal.igus * packaging_factor_per_igu(processes)
 
     # c) Disassembly (10% loss)
-    logger.info("Applying 10% yield loss for disassembly (repurpose).")
-    DISASSEMBLY_YIELD = 0.10
+    logger.info(f"Applying {YIELD_DISASSEMBLY_REPURPOSE*100}% yield loss for disassembly (repurpose).")
+    DISASSEMBLY_YIELD = YIELD_DISASSEMBLY_REPURPOSE
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
     # Used flow_post_disassembly (post-yield) area
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
@@ -365,7 +394,7 @@ def run_scenario_closed_loop_recycling(
     transport_A_kgco2 = mass_A_t * (truck_A_km * transport.emissionfactor_truck + ferry_A_km * transport.emissionfactor_ferry)
     
     # e) Processor fractions
-    CULLET_FLOAT_SHARE = 0.80
+    CULLET_FLOAT_SHARE = SHARE_CULLET_FLOAT
     flow_float = apply_yield_loss(flow_step2, 1.0 - CULLET_FLOAT_SHARE)
     
     # f) Dispatch to float plant
@@ -449,8 +478,8 @@ def run_scenario_open_loop_recycling(
     transport_A_kgco2 = mass_A_t * (truck_A_km * transport.emissionfactor_truck + ferry_A_km * transport.emissionfactor_ferry)
     
     # Processor Fractions
-    CULLET_CW_SHARE = 0.10
-    CULLET_CONT_SHARE = 0.10
+    CULLET_CW_SHARE = SHARE_CULLET_OPEN_LOOP_GW
+    CULLET_CONT_SHARE = SHARE_CULLET_OPEN_LOOP_CONT
     
     # Task: "Recycle to Glasswool / Container"
     # d) Optional transport

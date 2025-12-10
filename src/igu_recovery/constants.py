@@ -69,6 +69,20 @@ HUMIDITY_FAILURE_RATE = _get("HUMIDITY_FAILURE_RATE")
 SPLIT_YIELD = _get("SPLIT_YIELD")
 REMANUFACTURING_YIELD = _get("REMANUFACTURING_YIELD")
 
+# Process Yields (formerly hardcoded)
+YIELD_REPAIR = _get("YIELD_REPAIR")
+YIELD_DISASSEMBLY_REUSE = _get("YIELD_DISASSEMBLY_REUSE")
+YIELD_DISASSEMBLY_REPURPOSE = _get("YIELD_DISASSEMBLY_REPURPOSE")
+
+# Processor Fractions (formerly hardcoded)
+# Share of flow that goes to Float plant in closed-loop recycling
+# (The rest, 1.0 - SHARE, is yield loss)
+SHARE_CULLET_FLOAT = _get("SHARE_CULLET_FLOAT") 
+
+# Open-loop shares
+SHARE_CULLET_OPEN_LOOP_GW = _get("SHARE_CULLET_OPEN_LOOP_GW")
+SHARE_CULLET_OPEN_LOOP_CONT = _get("SHARE_CULLET_OPEN_LOOP_CONT")
+
 # Logistics
 IGUS_PER_STILLAGE = _get("IGUS_PER_STILLAGE")
 STILLAGE_MASS_EMPTY_KG = _get("STILLAGE_MASS_EMPTY_KG")
@@ -84,6 +98,31 @@ INSTALL_SYSTEM_KGCO2_PER_M2 = _get("INSTALL_SYSTEM_KGCO2_PER_M2")
 # Densities
 GLASS_DENSITY_KG_M3 = _get("GLASS_DENSITY_KG_M3")
 SEALANT_DENSITY_KG_M3 = _get("SEALANT_DENSITY_KG_M3")
+SPACER_MASS_PER_M_KG = _get("SPACER_MASS_PER_M_KG")
+
+# Process Energy (Assembly)
+PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2 = _get("PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2")
+
+# Material Emission Factors (kgCO2e/kg unless specified)
+# From Image Data
+EF_MAT_SPACER_ALU = _get("EF_MAT_SPACER_ALU")
+EF_MAT_SPACER_STEEL = _get("EF_MAT_SPACER_STEEL")
+EF_MAT_SPACER_SWISS = _get("EF_MAT_SPACER_SWISS")
+EF_MAT_PVB = _get("EF_MAT_PVB")
+EF_MAT_SEALANT = _get("EF_MAT_SEALANT")
+
+# Glass Materials
+EF_MAT_GLASS_VIRGIN = _get("EF_MAT_GLASS_VIRGIN")   # Soda-lime glass (0% RC)
+EF_MAT_GLASS_100RC = _get("EF_MAT_GLASS_100RC")     # Soda-lime glass (100% RC)
+
+# Process Increments (kgCO2e/kg of glass processed? or m2?)
+# Image says: Toughened Glass +0.39, Coated Glass +0.27, Laminated +0.30
+# The units in image column "A1-A2 [kgCO2/kg]" but Toughened/Coated might be per kg or per m2. 
+# Typically processes like toughening are per kg or m2. Image shows +0.39 in a column that implies addition to base.
+# We will assume /kg for now to match the glass base, but check usage.
+EF_PROCESS_COATING = _get("EF_PROCESS_COATING")
+EF_PROCESS_TOUGHENING = _get("EF_PROCESS_TOUGHENING")
+EF_PROCESS_LAMINATING = _get("EF_PROCESS_LAMINATING")
 
 DECIMALS = _get("DECIMALS")
 
