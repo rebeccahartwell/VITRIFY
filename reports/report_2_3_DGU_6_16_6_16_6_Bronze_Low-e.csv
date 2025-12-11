@@ -1,0 +1,6 @@
+Product Group,Product Name,Scenario,Total Emissions (kgCO2e),Final Yield (%),Final Mass (kg),Intensity (kgCO2e/m2 output)
+,2.3_DGU_6_16_6_16_6_Bronze_Low-e,System Reuse,21.357620042213682,100.0,30.0,21.357620042213682
+,2.3_DGU_6_16_6_16_6_Bronze_Low-e,Component Reuse,26.56703357930431,80.0,24.0,33.208791974130385
+,2.3_DGU_6_16_6_16_6_Bronze_Low-e,Component Repurpose,23.630006810759,90.0,27.0,26.255563123065553
+,2.3_DGU_6_16_6_16_6_Bronze_Low-e,Closed-loop Recycling,9.379374073845966,80.0,24.0,11.724217592307458
+,2.3_DGU_6_16_6_16_6_Bronze_Low-e,Open-loop Recycling,6.078468222208462,20.0,5.999999999999998,30.392341111042317

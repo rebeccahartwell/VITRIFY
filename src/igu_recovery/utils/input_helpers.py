@@ -368,10 +368,58 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
     
     print(f"{C_SUCCESS}Selected: {row['win_name']} (Group: {row.get('Group/ID', 'N/A')}){C_RESET}")
     
-    # Parse Data
+    # Prompt for missing info (Quantity + Dimensions + Seal Geometry)
+    seal_geometry = prompt_seal_geometry()
+
+    print(f"\n{C_HEADER}Enter Quantity and Dimensions for this batch{C_RESET}")
+    total_igus_str = input(style_prompt("Total number of IGUs: ")).strip()
+    width_str = input(style_prompt("Width (mm): ")).strip()
+    height_str = input(style_prompt("Height (mm): ")).strip()
+
+    try:
+        total_igus = int(total_igus_str)
+        unit_width_mm = float(width_str)
+        unit_height_mm = float(height_str)
+    except ValueError:
+        logger.error("Invalid numeric input.")
+        raise SystemExit(1)
+        
+    group = parse_db_row_to_group(
+        row, 
+        total_igus, 
+        unit_width_mm, 
+        unit_height_mm, 
+        seal_geometry
+    )
+    
+    print_header("IGU System Defined from Database")
+    print(f"  {C_PROMPT}Product:{C_RESET} {selected_name}")
+    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
+    print(f"  {C_PROMPT}Spacer:{C_RESET} {group.spacer_material}, Sealant: {group.sealant_type_secondary}")
+    
+    return group, seal_geometry
+
+
+def parse_db_row_to_group(
+    row: pd.Series,
+    quantity: int,
+    width_mm: float,
+    height_mm: float,
+    seal_geometry: SealGeometry
+) -> IGUGroup:
+    """
+    Parses a single row from the product database into an IGUGroup object.
+    """
     # 1. Glazing Type
     # DB has "Double" or "Triple". Model expects "double", "triple"
-    glazing_type = str(row.get('Glazing Type', 'double')).lower()
+    raw_type = str(row.get('Glazing Type', 'double')).lower()
+    glazing_type = "double" # default
+    if "trip" in raw_type or "tgu" in raw_type or "3" in raw_type:
+        glazing_type = "triple"
+    elif "doub" in raw_type or "dgu" in raw_type or "2" in raw_type:
+        glazing_type = "double"
+    elif "sing" in raw_type or "sgu" in raw_type or "1" in raw_type:
+        glazing_type = "single"
     
     # 2. Spacer
     # DB: "Aluminum" -> Model "aluminium"
@@ -436,22 +484,6 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
     depth = t_outer + c1 + t_inner
     if t_mid and c2:
         depth += t_mid + c2
-        
-    # Prompt for missing info (Quantity + Dimensions + Seal Geometry)
-    seal_geometry = prompt_seal_geometry()
-
-    print(f"\n{C_HEADER}Enter Quantity and Dimensions for this batch{C_RESET}")
-    total_igus_str = input(style_prompt("Total number of IGUs: ")).strip()
-    width_str = input(style_prompt("Width (mm): ")).strip()
-    height_str = input(style_prompt("Height (mm): ")).strip()
-
-    try:
-        total_igus = int(total_igus_str)
-        unit_width_mm = float(width_str)
-        unit_height_mm = float(height_str)
-    except ValueError:
-        logger.error("Invalid numeric input.")
-        raise SystemExit(1)
 
     # Temp condition
     temp_condition = IGUCondition(
@@ -463,9 +495,9 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
     )
 
     group = IGUGroup(
-        quantity=total_igus,
-        unit_width_mm=unit_width_mm,
-        unit_height_mm=unit_height_mm,
+        quantity=quantity,
+        unit_width_mm=width_mm,
+        unit_height_mm=height_mm,
         glazing_type=glazing_type, # type: ignore
         glass_type_outer="annealed", # Default as DB doesn't specify heat treatment per pane clearly enough yet
         glass_type_inner="annealed",
@@ -484,12 +516,7 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
         sealant_type_primary=None
     )
     
-    print_header("IGU System Defined from Database")
-    print(f"  {C_PROMPT}Product:{C_RESET} {selected_name}")
-    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
-    print(f"  {C_PROMPT}Spacer:{C_RESET} {group.spacer_material}, Sealant: {group.sealant_type_secondary}")
-    
-    return group, seal_geometry
+    return group
 
 
 def ask_igu_condition_and_eligibility() -> IGUCondition:

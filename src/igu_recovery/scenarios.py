@@ -28,17 +28,21 @@ def run_scenario_system_reuse(
     group: IGUGroup,
     flow_start: FlowState,
     initial_stats: Dict[str, float],
-    initial_masses: Dict[str, float]
+    initial_masses: Dict[str, float],
+    interactive: bool = True
 ) -> ScenarioResult:
     """
     Scenario (a): System Reuse
     """
     logger.info("Running Scenario: System Reuse")
-    print_header("Scenario (a): System Reuse")
+    if interactive:
+        print_header("Scenario (a): System Reuse")
     
     # a) On-Site Removal + Yield
-    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-    yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+    yield_removal = 0.0
+    if interactive:
+        yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
+        yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
     
@@ -64,7 +68,10 @@ def run_scenario_system_reuse(
     packaging_kgco2 = flow_post_removal.igus * pkg_per_igu
     
     # b) Repair decision
-    repair_needed = prompt_yes_no("Does the IGU system require repair?", default=False)
+    repair_needed = False
+    if interactive:
+        repair_needed = prompt_yes_no("Does the IGU system require repair?", default=False)
+    
     repair_kgco2 = 0.0
     flow_post_repair = flow_post_removal
     
@@ -77,8 +84,10 @@ def run_scenario_system_reuse(
         repair_kgco2 = flow_post_repair.area_m2 * REPAIR_KGCO2_PER_M2
     
     # c) New recipient location
-    reuse_location = prompt_location("new recipient building / reuse destination")
-    transport.reuse = reuse_location
+    if interactive:
+        reuse_location = prompt_location("new recipient building / reuse destination")
+        transport.reuse = reuse_location
+    # Else: assume transport.reuse is already set correctly by caller
     
     # d) Transport B
     distances_B = compute_route_distances(transport)
@@ -128,17 +137,22 @@ def run_scenario_component_reuse(
     group: IGUGroup,
     seal_geometry: SealGeometry,
     flow_start: FlowState,
-    initial_stats: Dict[str, float]
+    initial_stats: Dict[str, float],
+    interactive: bool = True
 ) -> ScenarioResult:
     """
     Scenario (b): Component Reuse
     """
     logger.info("Running Scenario: Component Reuse")
-    print_header("Scenario (b): Component Reuse")
+    if interactive:
+        print_header("Scenario (b): Component Reuse")
     
     # a) On-Site Removal
-    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-    yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+    yield_removal = 0.0
+    if interactive:
+        yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
+        yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+    
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
     
@@ -167,7 +181,10 @@ def run_scenario_component_reuse(
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     
     # d) Recondition
-    recondition = prompt_yes_no("Is recondition of components required?", default=True)
+    recondition = True
+    if interactive:
+        recondition = prompt_yes_no("Is recondition of components required?", default=True)
+    
     recond_kgco2 = 0.0
     if recondition:
         logger.info(f"Applying reconditioning step with {RECONDITION_KGCO2_PER_M2} kgCO2e/m2")
@@ -202,8 +219,10 @@ def run_scenario_component_reuse(
     logger.info(f"Assembly: Spacer {mass_spacer_needed_kg:.2f}kg, Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
     
     # f) Next location
-    next_location = prompt_location("final installation location for reused IGUs")
-    transport.reuse = next_location
+    if interactive:
+        next_location = prompt_location("final installation location for reused IGUs")
+        transport.reuse = next_location
+    # Else: assume transport.reuse is set
     
     # g) Transport B
     distances_B = compute_route_distances(transport)
@@ -253,17 +272,22 @@ def run_scenario_component_repurpose(
     transport: TransportModeConfig,
     group: IGUGroup,
     flow_start: FlowState,
-    initial_stats: Dict[str, float]
+    initial_stats: Dict[str, float],
+    interactive: bool = True
 ) -> ScenarioResult:
     """
     Scenario (c): Component Repurpose
     """
     logger.info("Running Scenario: Component Repurpose")
-    print_header("Scenario (c): Component Repurpose")
+    if interactive:
+        print_header("Scenario (c): Component Repurpose")
     
     # a) On-Site Removal
-    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-    yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+    yield_removal = 0.0
+    if interactive:
+        yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
+        yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+    
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
     
@@ -288,9 +312,11 @@ def run_scenario_component_repurpose(
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     
     # e) Repurpose Intensity
-    logger.info("Select repurposing intensity:")
-    logger.info("  light/medium/heavy")
-    rep_preset = prompt_choice("Intensity", ["light", "medium", "heavy"], default="medium")
+    rep_preset = "medium"
+    if interactive:
+        logger.info("Select repurposing intensity:")
+        logger.info("  light/medium/heavy")
+        rep_preset = prompt_choice("Intensity", ["light", "medium", "heavy"], default="medium")
     
     rep_factor = REPURPOSE_MEDIUM_KGCO2_PER_M2
     if rep_preset == "light": rep_factor = REPURPOSE_LIGHT_KGCO2_PER_M2
@@ -299,8 +325,10 @@ def run_scenario_component_repurpose(
     repurpose_kgco2 = flow_post_disassembly.area_m2 * rep_factor
     
     # f) Next location
-    repurpose_dst = prompt_location("installation location for repurposed product")
-    transport.reuse = repurpose_dst
+    if interactive:
+        repurpose_dst = prompt_location("installation location for repurposed product")
+        transport.reuse = repurpose_dst
+    # Else: assume transport.reuse set
     
     # g) Transport B
     distances_B = compute_route_distances(transport)
@@ -347,28 +375,33 @@ def run_scenario_closed_loop_recycling(
     processes: ProcessSettings,
     transport: TransportModeConfig,
     group: IGUGroup,
-    flow_start: FlowState
+    flow_start: FlowState,
+    interactive: bool = True
 ) -> ScenarioResult:
     """
     Scenario (d): Closed-loop Recycling
     """
     logger.info("Running Scenario: Closed-loop Recycling")
-    print_header("Scenario (d): Closed-loop Recycling")
+    if interactive:
+        print_header("Scenario (d): Closed-loop Recycling")
     
     # a) Intact decision
-    send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
+    send_intact = True
+    if interactive:
+        send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
     
     # b/c) On-site removal + Break IGU
     yield_removal = 0.0
     yield_break = 0.0
     
     # Standard removal yield
-    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-    yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
-    
-    if not send_intact:
-        yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
-        yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
+    if interactive:
+        yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
+        yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+        
+        if not send_intact:
+            yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
+            yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
     
     flow_step1 = apply_yield_loss(flow_start, yield_removal)
     flow_step2 = apply_yield_loss(flow_step1, yield_break)
@@ -398,8 +431,10 @@ def run_scenario_closed_loop_recycling(
     flow_float = apply_yield_loss(flow_step2, 1.0 - CULLET_FLOAT_SHARE)
     
     # f) Dispatch to float plant
-    float_plant = prompt_location("Second Use Processing Facility (float glass plant)")
-    transport.reuse = float_plant
+    if interactive:
+        float_plant = prompt_location("Second Use Processing Facility (float glass plant)")
+        transport.reuse = float_plant
+    # Else assumes transport.reuse set (e.g. to a global recycling center)
     
     distances_B = compute_route_distances(transport)
     truck_B_km = distances_B["truck_B_km"] * transport.backhaul_factor
@@ -435,26 +470,31 @@ def run_scenario_open_loop_recycling(
     processes: ProcessSettings,
     transport: TransportModeConfig,
     group: IGUGroup,
-    flow_start: FlowState
+    flow_start: FlowState,
+    interactive: bool = True
 ) -> ScenarioResult:
     """
     Scenario (e): Open-loop Recycling
     """
     logger.info("Running Scenario: Open-loop Recycling")
-    print_header("Scenario (e): Open-loop Recycling")
+    if interactive:
+        print_header("Scenario (e): Open-loop Recycling")
     
     # a) Intact vs break
-    send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
+    send_intact = True
+    if interactive:
+        send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
     
     # yield
     yield_removal = 0.0
     yield_break = 0.0
-    yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-    yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
-    
-    if not send_intact:
-        yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
-        yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
+    if interactive:
+        yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
+        yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
+        
+        if not send_intact:
+            yield_break_str = input(style_prompt("% yield loss at breaking (0-100) [default=0]: ")).strip()
+            yield_break = float(yield_break_str)/100.0 if yield_break_str else 0.0
     
     flow_step1 = apply_yield_loss(flow_start, yield_removal)
     flow_step2 = apply_yield_loss(flow_step1, yield_break)
@@ -483,10 +523,13 @@ def run_scenario_open_loop_recycling(
     
     # Task: "Recycle to Glasswool / Container"
     # d) Optional transport
-    model_transport = prompt_yes_no("Model transport to glasswool/container plants?", default=False)
+    model_transport = False
+    if interactive:
+        model_transport = prompt_yes_no("Model transport to glasswool/container plants?", default=False)
+    
     open_loop_transport_kgco2 = 0.0
     
-    if model_transport:
+    if model_transport and interactive:
         gw_plant = prompt_location("Glasswool plant")
         cont_plant = prompt_location("Container glass plant")
         
