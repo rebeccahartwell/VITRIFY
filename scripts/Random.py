@@ -78,69 +78,70 @@ def main():
         ("Straight to Landfill", run_scenario_landfill)
     ]
 
-    print_header(f"Processing {len(df)} products with unique random contexts...")
+    print_header(f"Processing {len(df)} products with SAME random context...")
+    
+    # --- Global Random Context Generation ---
+    
+    # 1. Random Locations
+    origin = generate_random_location()
+    processor = generate_random_location()
+    reuse_dst = generate_random_location()
+    recycling_dst = generate_random_location()
+    landfill_dst = generate_random_location()
+    
+    print(f"Random Origin: {origin.lat:.4f}, {origin.lon:.4f}")
+    
+    # 2. Random Process Settings
+    processes = ProcessSettings(
+        e_site_kgco2_per_m2=random.choice([0.15, 0.25, 0.5]),
+        igus_per_stillage=random.choice([15, 20, 25, 30])
+    )
+    
+    # 3. Random Routes
+    processes.route_configs = {
+        "origin_to_processor": generate_random_route_config(),
+        "processor_to_reuse": generate_random_route_config(),
+        "processor_to_recycling": generate_random_route_config(),
+        "origin_to_landfill": generate_random_route_config(),
+        "processor_to_landfill": generate_random_route_config(),
+    }
+    
+    # 4. Random Transport Config
+    truck_ef = random.choice([0.098, 0.175, 0.080, 0.024])
+    transport = TransportModeConfig(
+        origin=origin,
+        processor=processor,
+        reuse=reuse_dst,
+        landfill=landfill_dst,
+        emissionfactor_truck=truck_ef
+    )
+    
+    # 5. Random Seal Geometry
+    seal_geometry = SealGeometry(
+        primary_thickness_mm=random.choice([4.0, 6.0, 8.0]),
+        primary_width_mm=random.choice([10.0, 12.0, 14.0]),
+        secondary_width_mm=random.choice([6.0, 8.0, 10.0])
+    )
+    
+    # 6. Random Condition
+    global_condition = IGUCondition(
+        visible_edge_seal_condition=random.choice(["acceptable", "unacceptable", "not assessed"]),
+        visible_fogging=random.choice([True, False]),
+        cracks_chips=random.choice([True, False]),
+        age_years=random.uniform(10.0, 40.0),
+        reuse_allowed=random.choice([True, False])
+    )
+    
+    # 7. Random Dims (Global Standard Unit)
+    total_igus = random.randint(10, 100)
+    unit_width_mm = random.choice([500.0, 1000.0, 1200.0, 1500.0])
+    unit_height_mm = random.choice([1000.0, 1500.0, 2000.0, 2500.0])
 
     for idx, row in df.iterrows():
         product_name = row.get('win_name', 'Unknown')
         group_id = row.get('Group/ID', 'N/A')
         
-        # --- Random Context Generation Per Product ---
-        
-        # 1. Random Locations
-        origin = generate_random_location()
-        processor = generate_random_location()
-        reuse_dst = generate_random_location()
-        recycling_dst = generate_random_location()
-        landfill_dst = generate_random_location()
-        
-        # 2. Random Process Settings
-        processes = ProcessSettings(
-            e_site_kgco2_per_m2=random.choice([0.15, 0.25, 0.5]),
-            igus_per_stillage=random.choice([15, 20, 25, 30])
-        )
-        
-        # 3. Random Routes
-        processes.route_configs = {
-            "origin_to_processor": generate_random_route_config(),
-            "processor_to_reuse": generate_random_route_config(),
-            "processor_to_recycling": generate_random_route_config(),
-            "origin_to_landfill": generate_random_route_config(),
-            "processor_to_landfill": generate_random_route_config(),
-        }
-        
-        # 4. Random Transport Config
-        truck_ef = random.choice([0.098, 0.175, 0.080, 0.024])
-        transport = TransportModeConfig(
-            origin=origin,
-            processor=processor,
-            reuse=reuse_dst,
-            landfill=landfill_dst,
-            emissionfactor_truck=truck_ef
-        )
-        
-        # 5. Random Seal Geometry
-        seal_geometry = SealGeometry(
-            primary_thickness_mm=random.choice([4.0, 6.0, 8.0]),
-            primary_width_mm=random.choice([10.0, 12.0, 14.0]),
-            secondary_width_mm=random.choice([6.0, 8.0, 10.0])
-        )
-        
-        # 6. Random Condition
-        # Ensure some reuse is possible sometimes
-        global_condition = IGUCondition(
-            visible_edge_seal_condition=random.choice(["acceptable", "unacceptable", "not assessed"]),
-            visible_fogging=random.choice([True, False]),
-            cracks_chips=random.choice([True, False]),
-            age_years=random.uniform(10.0, 40.0),
-            reuse_allowed=random.choice([True, False])
-        )
-        
-        # 7. Random Dims
-        total_igus = random.randint(10, 100)
-        unit_width_mm = random.choice([500.0, 1000.0, 1200.0, 1500.0])
-        unit_height_mm = random.choice([1000.0, 1500.0, 2000.0, 2500.0])
-        
-        # --- Execution ---
+        # --- Execution using Global Context ---
 
         # Create Group
         group = parse_db_row_to_group(row, total_igus, unit_width_mm, unit_height_mm, seal_geometry)
