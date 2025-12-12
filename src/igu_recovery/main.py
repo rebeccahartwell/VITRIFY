@@ -7,7 +7,8 @@ import sys
 
 from .constants import ROUTE_A_MODE, ROUTE_B_MODE
 from .models import (
-    ProcessSettings, TransportModeConfig, IGUGroup, FlowState, RouteConfig, Location
+    ProcessSettings, TransportModeConfig, IGUGroup, FlowState, RouteConfig, Location,
+    SealGeometry, IGUCondition
 )
 import pandas as pd
 import os
@@ -225,7 +226,29 @@ def run_automated_analysis(processes: ProcessSettings):
     )
     
     # 3. Execution Loop
-    results = []
+    execute_analysis_batch(
+        df=df,
+        processes=processes,
+        transport=transport,
+        total_igus=total_igus,
+        unit_width_mm=unit_width_mm,
+        unit_height_mm=unit_height_mm,
+        seal_geometry=seal_geometry,
+        global_condition=global_condition,
+        recycling_dst=recycling_dst
+    )
+
+def execute_analysis_batch(
+    df: pd.DataFrame,
+    processes: ProcessSettings,
+    transport: TransportModeConfig,
+    total_igus: int,
+    unit_width_mm: float,
+    unit_height_mm: float,
+    seal_geometry: SealGeometry,
+    global_condition: IGUCondition,
+    recycling_dst: Location
+):
     scenarios = [
         ("System Reuse", run_scenario_system_reuse),
         ("Component Reuse", run_scenario_component_reuse),
@@ -240,6 +263,8 @@ def run_automated_analysis(processes: ProcessSettings):
     # Setup Reports Dir
     reports_dir = r"d:\VITRIFY\reports"
     os.makedirs(reports_dir, exist_ok=True)
+    
+    results = []
     
     print_header(f"Starting Analysis of {len(df)} products x {len(scenarios)} scenarios...")
     
@@ -301,9 +326,6 @@ def run_automated_analysis(processes: ProcessSettings):
                         "Processor": f"{transport.processor.lat},{transport.processor.lon}",
                         "Route A Mode": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).mode,
                         "Route A Dist (km)": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).truck_km + processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).ferry_km,
-                         # Note: Route B varies by scenario, could be reuse or recycling.
-                         # We can try to capture specific route info if relevant, but for summary maybe just Route A is critical common factor?
-                         # Or simpler: Just breakdown emissions.
                     }
                     
                     # Explode by_stage dictionary into columns
