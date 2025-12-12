@@ -7,7 +7,7 @@ import sys
 
 from .constants import ROUTE_A_MODE, ROUTE_B_MODE
 from .models import (
-    ProcessSettings, TransportModeConfig, IGUGroup, FlowState
+    ProcessSettings, TransportModeConfig, IGUGroup, FlowState, RouteConfig, Location
 )
 import pandas as pd
 import os
@@ -19,19 +19,84 @@ from .utils.input_helpers import (
     prompt_yes_no, style_prompt, C_SUCCESS, C_RESET, C_HEADER
 )
 from .utils.calculations import (
-    aggregate_igu_groups, compute_igu_mass_totals
+    aggregate_igu_groups, compute_igu_mass_totals, haversine_km, get_osrm_distance
 )
 from .scenarios import (
     run_scenario_system_reuse,
     run_scenario_component_reuse,
     run_scenario_component_repurpose,
     run_scenario_closed_loop_recycling,
-    run_scenario_open_loop_recycling
+    run_scenario_component_repurpose,
+    run_scenario_closed_loop_recycling,
+    run_scenario_open_loop_recycling,
+    run_scenario_landfill
 )
 from .logging_conf import setup_logging
 from .models import IGUCondition
 
 logger = logging.getLogger(__name__)
+
+def configure_route(name: str, origin: Location, destination: Location, interactive: bool = True) -> RouteConfig:
+    """
+    Configures a transport route. 
+    Calculates air distance.
+    If interactive, prompts for mode and specific distances (e.g. Ferry).
+    Returns RouteConfig.
+    """
+    dist_air = haversine_km(origin, destination)
+    
+    # Try OSRM first
+    osrm_km, has_ferry = get_osrm_distance(origin, destination)
+    
+    ferry_detected_msg = ""
+    default_mode = "HGV lorry"
+    
+    if osrm_km:
+        est_road_km = int(osrm_km)
+        dist_label = f"OSM Driving Distance: {osrm_km:.1f} km"
+        if has_ferry:
+            ferry_detected_msg = " [!] OSRM detected a ferry crossing."
+            default_mode = "HGV lorry+ferry"
+    else:
+        # Fallback
+        est_road_km = int(dist_air * 1.3)
+        dist_label = f"Estimated Road Distance (Air x 1.3): ~{est_road_km} km"
+    
+    if not interactive:
+        # Default fallback for non-interactive (Batch mode)
+        final_km = osrm_km if osrm_km else float(est_road_km)
+        # If ferry detected in batch mode, we ideally should use ferry mode?
+        # But our batch default config assumes Truck usually. 
+        # If OSRM says ferry, RouteConfig needs split? 
+        # For simple batch, let's keep it simple or enable ferry if detected?
+        mode_batch = "HGV lorry+ferry" if has_ferry else "HGV lorry"
+        return RouteConfig(mode=mode_batch, truck_km=final_km, ferry_km=0.0) # 0.0 ferry km in batch unless we estimate
+
+    print(f"\n--- Configuring Route: {name} ---")
+    print(f"  Origin: {origin.lat:.4f}, {origin.lon:.4f}")
+    print(f"  Destination: {destination.lat:.4f}, {destination.lon:.4f}")
+    print(f"  {dist_label}{ferry_detected_msg}")
+    
+    mode = prompt_choice(f"Transport Mode for {name}", ["HGV lorry", "HGV lorry+ferry"], default=default_mode)
+    
+    truck_km = 0.0
+    ferry_km = 0.0
+    
+    if mode == "HGV lorry":
+        truck_km_str = input(style_prompt(f"Road distance (km) [default={est_road_km}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(est_road_km)
+    else:
+        # Ferry
+        print("For Ferry mode, please specify the split:")
+        ferry_km_str = input(style_prompt("  Ferry distance (km) [default=50]: ")).strip()
+        ferry_km = float(ferry_km_str) if ferry_km_str else 50.0
+        
+        # Remaining distance for truck
+        est_residual_road = int(max(0, est_road_km - ferry_km))
+        truck_km_str = input(style_prompt(f"  Road distance (km) [default={est_residual_road}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(est_residual_road)
+        
+    return RouteConfig(mode=mode, truck_km=truck_km, ferry_km=ferry_km)
 
 def run_automated_analysis(processes: ProcessSettings):
     """
@@ -55,6 +120,11 @@ def run_automated_analysis(processes: ProcessSettings):
          logger.error("Invalid database format: 'win_name' column missing.")
          return
     
+    # Forward fill the Group/ID column to handle merged cells in Excel
+    if 'Group/ID' in df.columns:
+        df['Group/ID'] = df['Group/ID'].ffill()
+
+    
     print(f"\n{C_SUCCESS}Loaded {len(df)} products from database.{C_RESET}")
     
     # 2. Global Inputs
@@ -65,10 +135,41 @@ def run_automated_analysis(processes: ProcessSettings):
     processor = prompt_location("processor location (Global)")
     transport = TransportModeConfig(origin=origin, processor=processor, reuse=processor)
     
-    # Transport Modes
-    print("\nSelect Transport Modes (Global):")
-    processes.route_A_mode = prompt_choice("Route A (origin->processor)", ["HGV lorry", "HGV lorry+ferry"], default=ROUTE_A_MODE) # type: ignore
-    processes.route_B_mode = prompt_choice("Route B (processor->destination)", ["HGV lorry", "HGV lorry+ferry"], default=ROUTE_B_MODE) # type: ignore
+    # Transport Configurations
+    processes.route_configs = {}
+    
+    # Route A (Origin -> Processor)
+    processes.route_configs["origin_to_processor"] = configure_route(
+        "Origin -> Processor", origin, processor, interactive=False
+    )
+    
+    # Route B (Processor -> Reuse) - Need reusedst first
+    # Global Reuse Destination (for Reuse paths)
+    reuse_dst = prompt_location("Global Reuse Destination (for Reuse/Repurpose)")
+    transport.reuse = reuse_dst
+    
+    processes.route_configs["processor_to_reuse"] = configure_route(
+        "Processor -> Reuse", processor, reuse_dst, interactive=False
+    )
+
+    # Global Recycling Destination (for Closed-loop path)
+    recycling_dst = prompt_location("Global Recycling Destination (for Closed-loop)")
+    
+    processes.route_configs["processor_to_recycling"] = configure_route(
+        "Processor -> Recycling", processor, recycling_dst, interactive=False
+    )
+    
+    # Global Landfill Location (for waste/yield losses)
+    landfill_dst = prompt_location("Global Landfill Location (for waste/yield losses)")
+    transport.landfill = landfill_dst
+    
+    # Waste Routes
+    processes.route_configs["origin_to_landfill"] = configure_route(
+        "Origin -> Landfill", origin, landfill_dst, interactive=False
+    )
+    processes.route_configs["processor_to_landfill"] = configure_route(
+        "Processor -> Landfill", processor, landfill_dst, interactive=False
+    )
     
     # Truck Preset
     print("\nSelect HGV lorry emission factor preset:")
@@ -79,18 +180,17 @@ def run_automated_analysis(processes: ProcessSettings):
     elif truck_preset == "best_diesel": transport.emissionfactor_truck = 0.080
     elif truck_preset == "ze_truck": transport.emissionfactor_truck = 0.024
     
-    # Global Reuse Destination
-    reuse_dst = prompt_location("Global Reuse/Recycling Destination (Start->Processor->Here)")
-    transport.reuse = reuse_dst
+    # Removed old global input prompts as they are now integrated above
+    # transport.reuse / landfill set above
     
     # Seal Geometry
     seal_geometry = prompt_seal_geometry()
     
     # Dimensions (Unit)
     print(f"\n{C_HEADER}Global Unit Dimensions for Simulation{C_RESET}")
-    print("To make results comparable, define a standard IGU size and quantity per product run.")
+    print("To make results comparable, define a standard IGU size and count per product run.")
     try:
-        total_igus = int(input(style_prompt("Quantity per product [default=1]: ") or "1"))
+        total_igus = int(input(style_prompt("Number of IGUs [default=1]: ") or "1"))
         unit_width_mm = float(input(style_prompt("Width (mm) [default=1000]: ") or "1000"))
         unit_height_mm = float(input(style_prompt("Height (mm) [default=1000]: ") or "1000"))
     except ValueError:
@@ -122,7 +222,10 @@ def run_automated_analysis(processes: ProcessSettings):
         ("Component Reuse", run_scenario_component_reuse),
         ("Component Repurpose", run_scenario_component_repurpose),
         ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
-        ("Open-loop Recycling", run_scenario_open_loop_recycling)
+        ("Component Repurpose", run_scenario_component_repurpose),
+        ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
+        ("Open-loop Recycling", run_scenario_open_loop_recycling),
+        ("Straight to Landfill", run_scenario_landfill)
     ]
     
     # Setup Reports Dir
@@ -166,9 +269,14 @@ def run_automated_analysis(processes: ProcessSettings):
                 elif sc_name == "Component Repurpose":
                     res = run_scenario_component_repurpose(processes, transport, group, flow_start, stats, interactive=False)
                 elif sc_name == "Closed-loop Recycling":
-                    res = run_scenario_closed_loop_recycling(processes, transport, group, flow_start, interactive=False)
+                    # For Closed-loop, we use the recycling destination
+                    transport_recycling = TransportModeConfig(**transport.__dict__)
+                    transport_recycling.reuse = recycling_dst
+                    res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, flow_start, interactive=False)
                 elif sc_name == "Open-loop Recycling":
                     res = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=False)
+                elif sc_name == "Straight to Landfill":
+                    res = run_scenario_landfill(processes, transport, group, flow_start, interactive=False)
                 
                 if res:
                     entry = {
@@ -191,6 +299,13 @@ def run_automated_analysis(processes: ProcessSettings):
                 
     # 4. Save Report
     report_df = pd.DataFrame(results)
+    
+    # Round numerical columns to 3 decimal places
+    cols_to_round = ["Total Emissions (kgCO2e)", "Final Yield (%)", "Final Mass (kg)", "Intensity (kgCO2e/m2 output)"]
+    for col in cols_to_round:
+        if col in report_df.columns:
+            report_df[col] = report_df[col].round(3)
+
     out_file = "d:\\VITRIFY\\automated_analysis_report.csv"
     report_df.to_csv(out_file, index=False)
     
@@ -211,6 +326,9 @@ def main():
     
     print("Welcome! Select operation mode:")
     mode = prompt_choice("Mode", ["Single Run (Interactive)", "Automated Analysis (Batch)"], default="Single Run (Interactive)")
+    
+    # Setup process settings dict
+    processes.route_configs = {}
     
     if mode == "Automated Analysis (Batch)":
         run_automated_analysis(processes)
@@ -236,24 +354,46 @@ def main():
     # Initial transport config (reuse destination is placeholder until scenario selection)
     transport = TransportModeConfig(origin=origin, processor=processor, reuse=processor)
     
+    # Global Landfill
+    landfill_dst = prompt_location("Global Landfill Location (for waste/yield losses)")
+    transport.landfill = landfill_dst
+    
     logger.info("\nLocations defined:")
     logger.info(f"  Origin   : {origin.lat:.6f}, {origin.lon:.6f}")
     logger.info(f"  Processor: {processor.lat:.6f}, {processor.lon:.6f}")
     
-    # Transport Modes
-    print("Select Transport Modes:")
-    route_A_mode_str = prompt_choice(
-        "Route A transport mode (origin → processor)",
-        ["HGV lorry", "HGV lorry+ferry"],
-        default=ROUTE_A_MODE,
+    logger.info(f"  Processor: {processor.lat:.6f}, {processor.lon:.6f}")
+    
+    # Configure Routes Interactively
+    
+    # 1. Route A: Origin -> Processor
+    processes.route_configs["origin_to_processor"] = configure_route(
+        "Origin -> Processor", origin, processor, interactive=True
     )
-    route_B_mode_str = prompt_choice(
-        "Route B transport mode (processor → second site)",
-        ["HGV lorry", "HGV lorry+ferry"],
-        default=ROUTE_B_MODE,
+    
+    # 2. Re-Use Destination Selection (needed for Route B config)
+    # We ask for it now to configure the route, even if user picks a scenario later that might use 'recycling'
+    # Actually, we should probably configure generic routes or wait?
+    # Simpler: Ask for destinations now, then configure routes.
+    
+    reuse_dst = prompt_location("Reuse Destination (for Reuse/Repurpose scenarios)")
+    transport.reuse = reuse_dst
+    processes.route_configs["processor_to_reuse"] = configure_route(
+        "Processor -> Reuse", processor, reuse_dst, interactive=True
     )
-    processes.route_A_mode = route_A_mode_str  # type: ignore[assignment]
-    processes.route_B_mode = route_B_mode_str  # type: ignore[assignment]
+    
+    recycling_dst = prompt_location("Recycling Destination (for Closed-loop/Open-loop)")
+    processes.route_configs["processor_to_recycling"] = configure_route(
+        "Processor -> Recycling", processor, recycling_dst, interactive=True
+    )
+    
+    # Waste Routes (using the already prompted landfill_dst)
+    processes.route_configs["origin_to_landfill"] = configure_route(
+        "Origin -> Landfill", origin, landfill_dst, interactive=True
+    )
+    processes.route_configs["processor_to_landfill"] = configure_route(
+        "Processor -> Landfill", processor, landfill_dst, interactive=True
+    )
     
     # Truck settings
     logger.info("\nSelect HGV lorry emission factor preset (DEFRA 2024 / Industry benchmarks):")
@@ -298,10 +438,11 @@ def main():
     logger.info("  c) Component Repurpose (Dismantle -> Disassemble -> Repurpose -> Install)")
     logger.info("  d) Closed-loop Recycling (Dismantle -> Float Plant -> New Glass)")
     logger.info("  e) Open-loop Recycling (Dismantle -> Glasswool/Container)")
+    logger.info("  f) Straight to Landfill (Dismantle -> Landfill)")
     
     scenario_choice = prompt_choice(
         "Select scenario",
-        ["system_reuse", "component_reuse", "component_repurpose", "closed_loop_recycling", "open_loop_recycling"],
+        ["system_reuse", "component_reuse", "component_repurpose", "closed_loop_recycling", "open_loop_recycling", "landfill"],
         default="system_reuse"
     )
     
@@ -333,6 +474,10 @@ def main():
         
     elif scenario_choice == "open_loop_recycling":
         result = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=True)
+        print_scenario_overview(result)
+        
+    elif scenario_choice == "landfill":
+        result = run_scenario_landfill(processes, transport, group, flow_start, interactive=True)
         print_scenario_overview(result)
 
 if __name__ == "__main__":

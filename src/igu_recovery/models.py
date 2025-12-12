@@ -18,6 +18,16 @@ class Location:
 
 
 @dataclass
+class RouteConfig:
+    """
+    Configuration for a specific transport route.
+    """
+    mode: TransportMode
+    truck_km: float = 0.0
+    ferry_km: float = 0.0
+
+
+@dataclass
 class TransportModeConfig:
     """
     Transport configuration between:
@@ -40,6 +50,7 @@ class TransportModeConfig:
     travel_ferry_A_km_override: Optional[float] = None
     travel_truck_B_km_override: Optional[float] = None
     travel_ferry_B_km_override: Optional[float] = None
+    landfill: Optional[Location] = None
 
 
 @dataclass
@@ -56,8 +67,11 @@ class ProcessSettings:
     humidity_failure_rate: float = HUMIDITY_FAILURE_RATE
     split_yield: float = SPLIT_YIELD
     remanufacturing_yield: float = REMANUFACTURING_YIELD
-    route_A_mode: TransportMode = ROUTE_A_MODE  # type: ignore[assignment]
-    route_B_mode: TransportMode = ROUTE_B_MODE  # type: ignore[assignment]
+    split_yield: float = SPLIT_YIELD
+    remanufacturing_yield: float = REMANUFACTURING_YIELD
+    # route_A_mode / route_B_mode replaced by route_configs registry
+    # key: str (e.g. "origin_to_processor", "processor_to_reuse") -> RouteConfig
+    route_configs: Dict[str, 'RouteConfig'] = None # type: ignore
     igus_per_stillage: int = IGUS_PER_STILLAGE
     stillage_mass_empty_kg: float = STILLAGE_MASS_EMPTY_KG
     max_truck_load_kg: float = MAX_TRUCK_LOAD_KG

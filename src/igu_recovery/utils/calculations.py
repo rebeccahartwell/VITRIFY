@@ -6,7 +6,10 @@ from ..constants import (
     GLASS_DENSITY_KG_M3, SEALANT_DENSITY_KG_M3, SPACER_MASS_PER_M_KG
 )
 from ..models import Location, TransportModeConfig, IGUGroup, ProcessSettings, SealGeometry, BatchInput, GlazingType, FlowState
+import requests
+import logging
 
+logger = logging.getLogger(__name__)
 def f3(x: float) -> str:
     """
     Format a float with a fixed number of decimal places (DECIMALS).
@@ -28,7 +31,48 @@ def haversine_km(a: Location, b: Location) -> float:
     dlon = lon2 - lon1
     h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     c = 2 * atan2(sqrt(h), sqrt(1 - h))
+    c = 2 * atan2(sqrt(h), sqrt(1 - h))
     return r * c
+
+
+from typing import Dict, List, Optional, Tuple
+
+def get_osrm_distance(origin: Location, dest: Location) -> Tuple[Optional[float], bool]:
+    """
+    Get driving distance in km and ferry presence from OSRM public API.
+    Returns (distance_km, has_ferry).
+    distance_km is None if request fails.
+    """
+    # Request steps to check for ferry maneuvers
+    url = f"http://router.project-osrm.org/route/v1/driving/{origin.lon},{origin.lat};{dest.lon},{dest.lat}?overview=false&steps=true"
+    
+    try:
+        # 2s timeout
+        resp = requests.get(url, timeout=2.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if "routes" in data and len(data["routes"]) > 0:
+                route = data["routes"][0]
+                dist_meters = route["distance"]
+                
+                # Check for ferry in steps
+                has_ferry = False
+                if "legs" in route:
+                    for leg in route["legs"]:
+                        for step in leg.get("steps", []):
+                            # OSRM usually marks ferry steps with maneuver type 'notification' and modifier or mode 'ferry'
+                            # Simpler check: step['mode'] == 'ferry' if available, or maneuver type
+                            # The 'mode' property is standard in OSRM v5
+                            if step.get("mode") == "ferry":
+                                has_ferry = True
+                                break
+                        if has_ferry: break
+                
+                return (dist_meters / 1000.0, has_ferry)
+    except Exception as e:
+        logger.warning(f"OSRM request failed: {e}")
+    
+    return (None, False)
 
 
 def compute_route_distances(transport: TransportModeConfig) -> Dict[str, float]:
