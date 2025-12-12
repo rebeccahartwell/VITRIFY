@@ -186,12 +186,8 @@ def run_automated_analysis(processes: ProcessSettings):
             except Exception as e:
                 logger.error(f"Error processing {product_name} - {sc_name}: {e}")
                 
-        # Save Individual Report
-        if product_results:
-            sanitized_name = re.sub(r'[^\w\-_]', '_', str(product_name))
-            p_file = os.path.join(reports_dir, f"report_{sanitized_name}.csv")
-            pd.DataFrame(product_results).to_csv(p_file, index=False)
-            logger.info(f"Saved report: {p_file}")
+        # Individual report generation removed per user request
+
                 
     # 4. Save Report
     report_df = pd.DataFrame(results)
