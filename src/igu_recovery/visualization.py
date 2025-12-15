@@ -185,8 +185,8 @@ class Visualizer:
         """Generate summary plots for the entire batch."""
         if df.empty: return
         
-        self._plot_batch_distribution(df)
-        self._plot_batch_scatter(df)
+        # self._plot_batch_distribution(df)
+        # self._plot_batch_scatter(df)
         self._plot_batch_intensity(df)
 
     def _plot_batch_distribution(self, df: pd.DataFrame):

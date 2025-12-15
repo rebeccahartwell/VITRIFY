@@ -197,7 +197,7 @@ def aggregate_igu_groups(
     panes_per_igu = total_panes_sum / total_quantity_acceptable if total_quantity_acceptable > 0 else 0.0
 
     total_panes = after_humidity * panes_per_igu * processes.split_yield
-    remanufactured_igus_raw = floor(total_panes / panes_per_igu)
+    remanufactured_igus_raw = floor(total_panes / panes_per_igu) if panes_per_igu > 0 else 0.0
     remanufactured_igus = remanufactured_igus_raw * processes.remanufacturing_yield
 
     average_area_per_igu = (

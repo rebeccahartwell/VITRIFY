@@ -1,0 +1,9 @@
+=== EMISSION CALCULATION AUDIT LOG ===
+Session: 20251215_173905
+======================================
+
+[17:39:19] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.3865, Truck_km=320.05159999999995, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  19.3962 kgCO2e
+----------------------------------------

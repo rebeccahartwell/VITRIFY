@@ -18,7 +18,8 @@ from .models import (
 from .utils.calculations import (
     apply_yield_loss, packaging_factor_per_igu, calculate_material_masses, haversine_km
 )
-from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice, print_header, style_prompt
+from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice, print_header, style_prompt, configure_route
+from .audit import audit_logger
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,27 @@ def get_route_emissions(mass_kg: float, route_key: str, processes: ProcessSettin
     # ferry_A_km = (distances["ferry_A_km"] * transport.backhaul_factor)
     ferry_e *= transport.backhaul_factor
     
-    return truck_e + ferry_e
+    ferry_e *= transport.backhaul_factor
+    
+    total_e = truck_e + ferry_e
+
+    # AUDIT LOG
+    audit_logger.log_calculation(
+        context=f"Transport Emissions (Route: {route_key})",
+        formula="Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul",
+        variables={
+            "Mass_t": round(mass_t, 4),
+            "Truck_km": config.truck_km,
+            "Ferry_km": config.ferry_km,
+            "EF_Truck": transport.emissionfactor_truck,
+            "EF_Ferry": transport.emissionfactor_ferry,
+            "Backhaul": transport.backhaul_factor
+        },
+        result=total_e,
+        unit="kgCO2e"
+    )
+
+    return total_e
 
 def run_scenario_landfill(
     processes: ProcessSettings,
@@ -108,7 +129,8 @@ def run_scenario_system_reuse(
     flow_start: FlowState,
     initial_stats: Dict[str, float],
     initial_masses: Dict[str, float],
-    interactive: bool = True
+    interactive: bool = True,
+    repair_needed: bool = None
 ) -> ScenarioResult:
     """
     Scenario (a): System Reuse
@@ -118,12 +140,21 @@ def run_scenario_system_reuse(
         print_header("Scenario (a): System Reuse")
     
     # a) On-Site Removal + Yield
+    if interactive:
+        print(f"  > Starting Mass: {flow_start.mass_kg:.2f} kg ({flow_start.igus:.1f} IGUs)")
+
     yield_removal = 0.0
     if interactive:
         yield_removal_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
         yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
+    
+    
+    if interactive and yield_removal > 0:
+        removed_mass = flow_start.mass_kg - flow_post_removal.mass_kg
+        print(f"  > Applied Removal Yield ({yield_removal:.1%}): -{removed_mass:.2f} kg sent to Waste.")
+        print(f"  > Remaining Mass: {flow_post_removal.mass_kg:.2f} kg")
     
     # Calculate dismantling emissions based on original area
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
@@ -145,9 +176,12 @@ def run_scenario_system_reuse(
     packaging_kgco2 = flow_post_removal.igus * pkg_per_igu
     
     # b) Repair decision
-    repair_needed = False
+    # b) Repair decision
     if interactive:
         repair_needed = prompt_yes_no("Does the IGU system require repair?", default=False)
+    elif repair_needed is None:
+        repair_needed = False # Default batch behavior
+
     
     repair_kgco2 = 0.0
     flow_post_repair = flow_post_removal
@@ -159,12 +193,25 @@ def run_scenario_system_reuse(
         
         # Calculate repair emissions on the remaining area 
         repair_kgco2 = flow_post_repair.area_m2 * REPAIR_KGCO2_PER_M2
+
+        if interactive:
+            removed_mass_repair = flow_post_removal.mass_kg - flow_post_repair.mass_kg
+            print(f"  > Applied Repair Yield ({YIELD_REPAIR:.1%}): -{removed_mass_repair:.2f} kg sent to Waste.")
+            print(f"  > Remaining Mass: {flow_post_repair.mass_kg:.2f} kg (Ready for Reuse)")
     
     # c) New recipient location
-    if interactive:
-        reuse_location = prompt_location("new recipient building / reuse destination")
-        transport.reuse = reuse_location
-    # Else: assume transport.reuse is already set correctly by caller
+    # c) New recipient location
+    if "processor_to_reuse" not in processes.route_configs:
+        if interactive:
+            print("\\nConfiguration for Reuse path required:")
+            reuse_location = prompt_location("new recipient building / reuse destination")
+            transport.reuse = reuse_location
+            processes.route_configs["processor_to_reuse"] = configure_route(
+                "Processor -> Reuse", transport.processor, transport.reuse, interactive=True
+            )
+        else:
+            # Batch mode should have configured this or fail
+            logger.warning("Route processor_to_reuse missing in batch mode!")
     
     # d) Transport B (Processor -> Reuse)
     stillage_mass_B_kg = 0.0
@@ -174,7 +221,10 @@ def run_scenario_system_reuse(
          
     total_mass_B_kg = flow_post_repair.mass_kg + stillage_mass_B_kg
     transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
-    
+
+    if interactive:
+        print(f"  > Transporting {total_mass_B_kg:.2f} kg to Reuse Site...")
+        
     # Installation
     install_kgco2 = flow_post_repair.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
     
@@ -239,6 +289,10 @@ def run_scenario_component_reuse(
         yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
+
+    if interactive and yield_removal > 0:
+        removed_mass = flow_start.mass_kg - flow_post_removal.mass_kg
+        print(f"  > Applied Removal Yield ({yield_removal:.1%}): -{removed_mass:.2f} kg sent to Waste.")
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
     
     # b) Transport A (Origin -> Processor)
@@ -258,6 +312,12 @@ def run_scenario_component_reuse(
     DISASSEMBLY_YIELD = YIELD_DISASSEMBLY_REUSE
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
     
+    
+    if interactive:
+        removed_mass_disas = flow_post_removal.mass_kg - flow_post_disassembly.mass_kg
+        print(f"  > Applied Disassembly Yield ({DISASSEMBLY_YIELD:.1%}): -{removed_mass_disas:.2f} kg sent to Waste.")
+        print(f"  > Remaining Mass: {flow_post_disassembly.mass_kg:.2f} kg (Components)")
+
     # Disassembly Emissions
     # Used flow_post_disassembly (post-yield) area
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
@@ -301,10 +361,15 @@ def run_scenario_component_reuse(
     logger.info(f"Assembly: Spacer {mass_spacer_needed_kg:.2f}kg, Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
     
     # f) Next location
-    if interactive:
-        next_location = prompt_location("final installation location for reused IGUs")
-        transport.reuse = next_location
-    # Else: assume transport.reuse is set
+    # f) Next location
+    if "processor_to_reuse" not in processes.route_configs:
+        if interactive:
+            print("\\nConfiguration for Reuse path required:")
+            next_location = prompt_location("final installation location for reused IGUs")
+            transport.reuse = next_location
+            processes.route_configs["processor_to_reuse"] = configure_route(
+                "Processor -> Reuse", transport.processor, transport.reuse, interactive=True
+            )
     
     # g) Transport B (Processor -> Reuse)
     stillage_mass_B_kg = 0.0
@@ -365,7 +430,8 @@ def run_scenario_component_repurpose(
     group: IGUGroup,
     flow_start: FlowState,
     initial_stats: Dict[str, float],
-    interactive: bool = True
+    interactive: bool = True,
+    repurpose_intensity: str = None
 ) -> ScenarioResult:
     """
     Scenario (c): Component Repurpose
@@ -381,6 +447,9 @@ def run_scenario_component_repurpose(
         yield_removal = float(yield_removal_str)/100.0 if yield_removal_str else 0.0
     
     flow_post_removal = apply_yield_loss(flow_start, yield_removal)
+    if interactive and yield_removal > 0:
+        loss = flow_start.mass_kg - flow_post_removal.mass_kg
+        print(f"  > Applied Removal Yield: -{loss:.2f} kg Waste.")
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
     
     # Transport A (Origin -> Processor)
@@ -397,15 +466,25 @@ def run_scenario_component_repurpose(
     logger.info(f"Applying {YIELD_DISASSEMBLY_REPURPOSE*100}% yield loss for disassembly (repurpose).")
     DISASSEMBLY_YIELD = YIELD_DISASSEMBLY_REPURPOSE
     flow_post_disassembly = apply_yield_loss(flow_post_removal, DISASSEMBLY_YIELD)
+    
+    if interactive:
+        loss = flow_post_removal.mass_kg - flow_post_disassembly.mass_kg
+        print(f"  > Applied Disassembly Yield ({DISASSEMBLY_YIELD:.1%}): -{loss:.2f} kg Waste.")
+    
+
     # Used flow_post_disassembly (post-yield) area
     disassembly_kgco2 = flow_post_disassembly.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     
     # e) Repurpose Intensity
-    rep_preset = "medium"
+    # e) Repurpose Intensity
     if interactive:
         logger.info("Select repurposing intensity:")
         logger.info("  light/medium/heavy")
         rep_preset = prompt_choice("Intensity", ["light", "medium", "heavy"], default="medium")
+    elif repurpose_intensity:
+        rep_preset = repurpose_intensity
+    else:
+        rep_preset = "medium"
     
     rep_factor = REPURPOSE_MEDIUM_KGCO2_PER_M2
     if rep_preset == "light": rep_factor = REPURPOSE_LIGHT_KGCO2_PER_M2
@@ -414,10 +493,15 @@ def run_scenario_component_repurpose(
     repurpose_kgco2 = flow_post_disassembly.area_m2 * rep_factor
     
     # f) Next location
-    if interactive:
-        repurpose_dst = prompt_location("installation location for repurposed product")
-        transport.reuse = repurpose_dst
-    # Else: assume transport.reuse set
+    # f) Next location
+    if "processor_to_reuse" not in processes.route_configs:
+        if interactive:
+            print("\\nConfiguration for Repurpose path required:")
+            repurpose_dst = prompt_location("installation location for repurposed product")
+            transport.reuse = repurpose_dst
+            processes.route_configs["processor_to_reuse"] = configure_route(
+                "Processor -> Reuse", transport.processor, transport.reuse, interactive=True
+            )
     
     # g) Transport B (Processor -> Reuse)
     stillage_mass_B_kg = 0.0
@@ -545,18 +629,38 @@ def run_scenario_closed_loop_recycling(
 
     flow_float = apply_yield_loss(flow_step2, 1.0 - CULLET_FLOAT_SHARE)
     
-    # f) Dispatch to float plant
     if interactive:
-        float_plant = prompt_location("Second Use Processing Facility (float glass plant)")
-        transport.reuse = float_plant
-    # Else assumes transport.reuse set (e.g. to a global recycling center)
+        if is_laminated:
+             print(f"  ! LAMINATED GLASS DETECTED. Yield = 0%. All mass to Waste.")
+        else:
+             loss = flow_step2.mass_kg - flow_float.mass_kg
+             print(f"  > Float Plant Quality Check (Yield {CULLET_FLOAT_SHARE:.1%}): -{loss:.2f} kg rejected.")
+        
+        print(f"  > Sending {flow_float.mass_kg:.2f} kg to Float Plant.")
+    
+    # f) Dispatch to float plant
+    # f) Dispatch to float plant
+    if "processor_to_recycling" not in processes.route_configs:
+        if interactive:
+            print("\\nConfiguration for Recycling path required:")
+            float_plant = prompt_location("Second Use Processing Facility (float glass plant)")
+            transport.reuse = float_plant # Reuse field reused for recycling dst in some contexts? Better stick to route key.
+            # Ideally transport.recycling? The model uses transport.reuse for B-leg often.
+            # But here we are configuring "processor_to_recycling".
+            
+            processes.route_configs["processor_to_recycling"] = configure_route(
+                "Processor -> Recycling", transport.processor, float_plant, interactive=True
+            )
     
     # NOTE: "processor_to_recycling" should be configured for the float plant / recycling destination
     # We used "processor_to_reuse" in previous scenarios.
     # In Closed Loop, this is B-leg.
     
     # Bulk cullet, no stillages
+    # Bulk cullet, no stillages
     transport_B_kgco2 = get_route_emissions(flow_float.mass_kg, "processor_to_recycling", processes, transport)
+    if interactive:
+         print(f"  > Transporting {flow_float.mass_kg:.2f} kg to Recycling Facility.")
     
     total = dismantling_kgco2 + breaking_kgco2 + transport_A_kgco2 + transport_B_kgco2
     
@@ -676,7 +780,14 @@ def run_scenario_open_loop_recycling(
     open_loop_transport_kgco2 = 0.0
     
     if model_transport:
-        # If interactive, user implied specific plants but we might fallback to generic config if not fully prompted.
+        if interactive:
+             if "processor_to_recycling" not in processes.route_configs:
+                 print("\\nConfiguration for Open-loop Recycling path required:")
+                 recycling_loc = prompt_location("Glasswool/Container processing facility")
+                 processes.route_configs["processor_to_recycling"] = configure_route(
+                    "Processor -> Recycling", transport.processor, recycling_loc, interactive=True
+                 )
+        
         # In batch, we definitely rely on "processor_to_recycling".
         
         mass_gw_kg = (flow_step2.mass_kg * CULLET_CW_SHARE)
@@ -692,6 +803,16 @@ def run_scenario_open_loop_recycling(
     # Calculate final flow before waste calc
     final_useful_fraction = CULLET_CW_SHARE + CULLET_CONT_SHARE # 20%
     flow_final = apply_yield_loss(flow_step2, 1.0 - final_useful_fraction)
+    
+    if interactive:
+        if yield_removal > 0:
+            print(f"  > Removal Loss: -{flow_start.mass_kg - flow_step1.mass_kg:.2f} kg")
+        if yield_break > 0:
+             print(f"  > Breaking Loss: -{flow_step1.mass_kg - flow_step2.mass_kg:.2f} kg")
+             
+        loss = flow_step2.mass_kg - flow_final.mass_kg
+        print(f"  > Useful Fraction (GW {CULLET_CW_SHARE:.1%} + Cont {CULLET_CONT_SHARE:.1%}): -{loss:.2f} kg rejected.")
+        print(f"  > Sending {flow_final.mass_kg:.2f} kg to Recycling.")
     
     # Waste Transport
     waste_transport_kgco2 = 0.0

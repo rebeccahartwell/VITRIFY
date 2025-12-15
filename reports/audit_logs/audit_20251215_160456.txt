@@ -1,0 +1,24 @@
+=== EMISSION CALCULATION AUDIT LOG ===
+Session: 20251215_160456
+======================================
+
+[16:08:38] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=7.0271, Truck_km=460.764, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  507.6958 kgCO2e
+----------------------------------------
+[16:09:12] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=5.6537, Truck_km=505.3047, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  447.9540 kgCO2e
+----------------------------------------
+[16:09:12] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=14.4088, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[16:09:12] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=1.3734, Truck_km=442.9366, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  95.3880 kgCO2e
+----------------------------------------

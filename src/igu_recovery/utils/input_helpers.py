@@ -4,8 +4,9 @@ import pandas as pd
 import re
 import os
 from typing import Optional, List, Tuple, Dict
-from ..models import Location, IGUGroup, SealGeometry, SealantType, IGUCondition, ProcessSettings, ScenarioResult, BatchInput, TransportModeConfig, FlowState
+from ..models import Location, IGUGroup, SealGeometry, SealantType, IGUCondition, ProcessSettings, ScenarioResult, BatchInput, TransportModeConfig, FlowState, RouteConfig
 from ..constants import GEOCODER_USER_AGENT, DECIMALS
+from ..config import load_excel_config
 from .calculations import aggregate_igu_groups, compute_igu_mass_totals, compute_sealant_volumes, default_mass_per_m2
 
 # COLORAMA SETUP
@@ -160,7 +161,21 @@ def prompt_yes_no(label: str, default: bool) -> bool:
             return True
         if s in ("n", "no"):
             return False
-        logger.warning("Please answer y or n.")
+        
+        logger.warning(f"Invalid answer '{s}'. Please enter y/n.")
+
+def prompt_float(label: str, default: float) -> float:
+    """
+    Prompt user for a float value.
+    """
+    while True:
+        s = input(style_prompt(f"{label} [default={default}]: ")).strip()
+        if not s:
+            return default
+        try:
+            return float(s)
+        except ValueError:
+            print(f"{C_ERROR}Invalid input. Please enter a number.{C_RESET}")
 
 
 def prompt_igu_source() -> str:
@@ -567,19 +582,19 @@ def ask_igu_condition_and_eligibility() -> IGUCondition:
     fogging = prompt_yes_no("Visible fogging?", default=False)
     cracks = prompt_yes_no("Cracks or chips present?", default=False)
     reuse_allowed = prompt_yes_no("Reuse allowed by owner/regulations?", default=True)
-
-    age_str = input(style_prompt("Approximate age of IGUs in years (default=20): ")).strip()
-    try:
-        age_years = float(age_str) if age_str else 20.0
-    except ValueError:
-        age_years = 20.0
-        
+    
+    # Load default lifetime from config
+    config = load_excel_config()
+    default_lifetime = float(config.get("Default IGU Service Lifetime (years)", 25.0))
+    
+    age_years = prompt_float(f"Approximate age of IGUs in years", default=default_lifetime)
+    
     return IGUCondition(
-        visible_edge_seal_condition=edge_cond_str,  # type: ignore[arg-type]
+        visible_edge_seal_condition=edge_cond_str,
         visible_fogging=fogging,
         cracks_chips=cracks,
         age_years=age_years,
-        reuse_allowed=reuse_allowed,
+        reuse_allowed=reuse_allowed
     )
 
 
@@ -626,6 +641,98 @@ def print_igu_geometry_overview(group: IGUGroup, seal_geometry: SealGeometry, pr
     print(f"\n{C_HEADER}Sealant Volumes (Total Batch):{C_RESET}")
     print(f"  Primary:    {seal_vols['primary_volume_total_m3']:.4f} m³")
     print(f"  Secondary:  {seal_vols['secondary_volume_total_m3']:.4f} m³")
+
+# Imports needed for configure_route (should be at top, but appending here for now)
+# We will fix imports in next step to be clean.
+
+def configure_route(name: str, origin: Location, destination: Location, interactive: bool = True) -> RouteConfig:
+    """
+    Configures a transport route. 
+    Calculates air distance.
+    If interactive, prompts for mode and specific distances (e.g. Ferry).
+    Returns RouteConfig.
+    """
+    # Import locally to avoid circular import if calculations imports input_helpers
+    from .calculations import haversine_km, get_osrm_distance
+    
+    dist_air = haversine_km(origin, destination)
+    
+    # Try OSRM first
+    osrm_km, has_ferry = get_osrm_distance(origin, destination)
+    
+    ferry_detected_msg = ""
+    default_mode = "HGV lorry"
+    
+    if osrm_km:
+        est_road_km = int(osrm_km)
+        dist_label = f"OSM Driving Distance: {osrm_km:.1f} km"
+        if has_ferry:
+            ferry_detected_msg = f" {C_HEADER}[!] OSRM detected a ferry crossing.{C_RESET}"
+            default_mode = "HGV lorry+ferry"
+        else:
+            ferry_detected_msg = " (No ferry detected)"
+    else:
+        # Fallback
+        est_road_km = int(dist_air * 1.3)
+        dist_label = f"Estimated Road Distance (Air x 1.3): ~{est_road_km} km"
+    
+    print(f"\\n--- Configuring Route: {name} ---")
+    print(f"  Origin: {origin.lat:.4f}, {origin.lon:.4f}")
+    print(f"  Destination: {destination.lat:.4f}, {destination.lon:.4f}")
+    print(f"  {dist_label}{ferry_detected_msg}")
+
+    if not interactive:
+        # Default fallback for non-interactive (Batch mode)
+        final_km = osrm_km if osrm_km else float(est_road_km)
+        
+        if has_ferry:
+            # Auto-configure ferry split for batch mode
+            ferry_km_batch = 50.0
+            truck_km_batch = max(0.0, final_km - ferry_km_batch)
+            print(f"  -> Batch Mode: Auto-configuring {default_mode} (assumed 50km ferry).")
+            return RouteConfig(mode="HGV lorry+ferry", truck_km=truck_km_batch, ferry_km=ferry_km_batch)
+        else:
+            return RouteConfig(mode="HGV lorry", truck_km=final_km, ferry_km=0.0)
+
+    # INTERACTIVE MODE
+    
+    # 1. OSRM Success: Auto-accept to save user clicks (User Request)
+    if osrm_km and not has_ferry:
+        print(f"{C_SUCCESS}  -> Auto-accepted OSRM route: {osrm_km:.1f} km (Road){C_RESET}")
+        return RouteConfig(mode="HGV lorry", truck_km=osrm_km, ferry_km=0.0)
+        
+    # 2. OSRM Success but FERRY detected: Must prompt for split (unavoidable ambiguity)
+    if osrm_km and has_ferry:
+         print(f"{C_HEADER}  -> Ferry detected! Please confirm split.{C_RESET}")
+
+    # 3. OSRM Failed: Auto-accept fallback to avoid annoying prompt loops (User Request)
+    if not osrm_km:
+        print(f"{C_HEADER}  -> OSRM failed. Auto-accepting estimated road distance (Air x 1.3): {est_road_km} km.{C_RESET}")
+        return RouteConfig(mode="HGV lorry", truck_km=float(est_road_km), ferry_km=0.0)
+
+    # 4. Fallback Prompt (Should rarely be reached now, mainly if has_ferry)
+    mode = prompt_choice(f"Transport Mode for {name}", ["HGV lorry", "HGV lorry+ferry"], default=default_mode)
+    
+    truck_km = 0.0
+    ferry_km = 0.0
+    
+    if mode == "HGV lorry":
+        # If we have osrm_km (but maybe user overrode ferry detection?), use it as default
+        def_km = osrm_km if osrm_km else est_road_km
+        truck_km_str = input(style_prompt(f"Road distance (km) [default={def_km:.1f}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(def_km)
+    else:
+        # Ferry
+        print("For Ferry mode, please specify the split:")
+        ferry_km_str = input(style_prompt("  Ferry distance (km) [default=50]: ")).strip()
+        ferry_km = float(ferry_km_str) if ferry_km_str else 50.0
+        
+        # Remaining distance for truck
+        def_road = max(0, (osrm_km if osrm_km else est_road_km) - ferry_km)
+        truck_km_str = input(style_prompt(f"  Road distance (km) [default={def_road:.1f}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(def_road)
+        
+    return RouteConfig(mode=mode, truck_km=truck_km, ferry_km=ferry_km)
 
 def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """

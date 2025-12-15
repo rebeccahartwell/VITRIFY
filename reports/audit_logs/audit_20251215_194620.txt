@@ -1,0 +1,239 @@
+=== EMISSION CALCULATION AUDIT LOG ===
+Session: 20251215_194620
+======================================
+
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8687 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1046, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8204 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0062, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0193 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1046, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8204 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0062, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0193 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1077, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8446 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0097 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1077, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8446 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0097 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_reuse)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1077, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.8446 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0097 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0246, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.1932 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0062, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0193 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0308, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.4830 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0246, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.1932 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0062, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0193 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.1108, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  1.7374 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0242 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0242 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0246, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0773 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_processor)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0308, Truck_km=100.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.4830 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0242 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_recycling)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0031, Truck_km=50.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0242 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0000 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: processor_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0246, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0773 kgCO2e
+----------------------------------------
+[19:46:20] Transport Emissions (Route: origin_to_landfill)
+  Formula: Mass(t) * [TruckDist(km)*EF_Truck + FerryDist(km)*EF_Ferry] * Backhaul
+  Inputs:  Mass_t=0.0308, Truck_km=20.0, Ferry_km=0.0, EF_Truck=0.098, EF_Ferry=0.015, Backhaul=1.6
+  Result:  0.0966 kgCO2e
+----------------------------------------
