@@ -484,6 +484,7 @@ def parse_db_row_to_group(
     depth = t_outer + c1 + t_inner
     if t_mid and c2:
         depth += t_mid + c2
+    if glazing_type == "single": depth = t_outer
 
     # Temp condition
     temp_condition = IGUCondition(
@@ -500,11 +501,33 @@ def parse_db_row_to_group(
     unit_name = str(row.get('Unit', '')).lower()
     
     is_laminated = False
-    indicators = ["lami", "stadip", "silence", "44.", "33.", "55.", "66."]
+    is_laminated = False
+    
+    # Load indicators from config or default
+    indicators = []
+    config_path = r"d:\VITRIFY\src\igu_recovery\config\laminated_indicators.txt"
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                indicators = [line.strip().lower() for line in f if line.strip()]
+        except Exception:
+            pass
+            
+    if not indicators:
+        indicators = ["lami", "stadip", "silence", "44.", "33.", "55.", "66."]
+
     if any(i in win_name for i in indicators) or any(i in unit_name for i in indicators):
         is_laminated = True
         
     g_type_outer = "laminated" if is_laminated else "annealed"
+    
+    # Check Inner_Lam
+    inner_val = str(row.get('Inner_Lam', '')).lower()
+    is_inner_lam = False
+    if inner_val in ('yes', 'y', 'true', '1') or any(i in inner_val for i in indicators):
+        is_inner_lam = True
+        
+    g_type_inner = "laminated" if is_inner_lam else "annealed"
     # Inner might be annealed, but for closed-loop logic, one laminated pane triggers penalty.
     
     group = IGUGroup(
@@ -513,7 +536,7 @@ def parse_db_row_to_group(
         unit_height_mm=height_mm,
         glazing_type=glazing_type, # type: ignore
         glass_type_outer=g_type_outer, 
-        glass_type_inner="annealed", # Assuming inner is simple for now, unless parsed otherwise
+        glass_type_inner=g_type_inner,
         coating_type=coating_type, # type: ignore
         sealant_type_secondary=sealant_type, # type: ignore
         spacer_material=spacer_material, # type: ignore
@@ -570,7 +593,7 @@ def print_igu_geometry_overview(group: IGUGroup, seal_geometry: SealGeometry, pr
     # 1. Compute stats
     # Note: Using a list with one group for aggregation
     stats = aggregate_igu_groups([group], processes)
-    masses = compute_igu_mass_totals([group], stats)
+    masses = compute_igu_mass_totals([group], stats, seal=seal_geometry)
     seal_vols = compute_sealant_volumes(group, seal_geometry)
     
     # We can use standard logs but user might want colors here too.
@@ -603,6 +626,98 @@ def print_igu_geometry_overview(group: IGUGroup, seal_geometry: SealGeometry, pr
     print(f"\n{C_HEADER}Sealant Volumes (Total Batch):{C_RESET}")
     print(f"  Primary:    {seal_vols['primary_volume_total_m3']:.4f} m³")
     print(f"  Secondary:  {seal_vols['secondary_volume_total_m3']:.4f} m³")
+
+def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Refine the automated analysis report DataFrame:
+     - Rename columns to readable format (Option A)
+     - Reorder columns logically (ID -> KPI -> Stages -> Metadata)
+     - Fill missing values with 0.0
+     - Round numerics
+    """
+    # Create a copy to avoid SettingWithCopy warnings if slice
+    df = df.copy()
+
+    # 1. Rename Columns
+    rename_map = {
+        "Product Group": "Product ID",
+        # "Product Name": "Product Name", # Stays
+        # "Scenario": "Scenario", # Stays
+        # "Total Emissions (kgCO2e)": "Total Emissions (kgCO2e)", # Stays
+        "Final Yield (%)": "Yield (%)",
+        "Final Mass (kg)": "Recovered Mass (kg)",
+        "Intensity (kgCO2e/m2 output)": "Intensity (kgCO2e/m²)",
+        
+        # Stages
+        "Emissions_Dismantling/Removal": "[Stage] Removal",
+        "Emissions_Transport A": "[Stage] Transport: Site->Processor",
+        "Emissions_Breaking": "[Stage] Pre-Processing (Breaking)",
+        "Emissions_Dismantling": "[Stage] Dismantling",
+        "Emissions_Disassembly": "[Stage] Disassembly",
+        "Emissions_Repurposing": "[Stage] Repurposing",
+        "Emissions_Recondition": "[Stage] Reconditioning",
+        "Emissions_Repair": "[Stage] Repair",
+        "Emissions_Assembly": "[Stage] IGU Assembly",
+        "Emissions_Transport B": "[Stage] Transport: Processor->Reuse",
+        "Emissions_Transport B (Float)": "[Stage] Transport: Processor->Float",
+        "Emissions_Installation": "[Stage] Installation",
+        "Emissions_Packaging": "[Stage] Packaging",
+        "Emissions_Landfill Transport": "[Stage] Transport: Disposal",
+        "Emissions_Landfill Transport (Waste)": "[Stage] Transport: Disposal",
+        "Emissions_Open-Loop Transport": "[Stage] Transport: Open-Loop"
+    }
+    
+    df.rename(columns=rename_map, inplace=True)
+    
+    # 2. Define Desired Column Order
+    desired_order = [
+        # Identifiers
+        "Product ID", "Product Name", "Scenario",
+        
+        # Key KPIs
+        "Total Emissions (kgCO2e)", "Yield (%)", "Intensity (kgCO2e/m²)", "Recovered Mass (kg)",
+        
+        # Stages (Chronological Flow)
+        "[Stage] Removal",
+        "[Stage] Transport: Site->Processor",
+        "[Stage] Pre-Processing (Breaking)",
+        "[Stage] Dismantling",
+        "[Stage] Disassembly",
+        "[Stage] Repurposing",
+        "[Stage] Reconditioning",
+        "[Stage] Repair",
+        "[Stage] IGU Assembly",
+        "[Stage] Packaging",
+        "[Stage] Transport: Processor->Reuse",
+        "[Stage] Transport: Processor->Float",
+        "[Stage] Transport: Open-Loop",
+        "[Stage] Transport: Disposal",
+        "[Stage] Installation",
+        
+        # Metadata
+        "Origin", "Processor", "Route A Mode", "Route A Dist (km)"
+    ]
+    
+    # 3. Apply Order and Fill Missing
+    for col in desired_order:
+        if col not in df.columns:
+            df[col] = 0.0
+            
+    # Keep any extra columns at the end
+    existing_cols = list(df.columns)
+    extra_cols = [c for c in existing_cols if c not in desired_order]
+    
+    final_cols = desired_order + extra_cols
+    df = df[final_cols]
+    
+    # Fill defaults
+    df.fillna(0.0, inplace=True)
+    
+    # Round
+    numeric_cols = df.select_dtypes(include=['float', 'int']).columns
+    df[numeric_cols] = df[numeric_cols].round(3)
+    
+    return df
 
 
 def print_scenario_overview(result: ScenarioResult):

@@ -735,3 +735,4 @@ def run_scenario_open_loop_recycling(
         final_mass_kg=flow_final.mass_kg,
         yield_percent=final_useful_fraction * 100.0
     )
+

@@ -169,15 +169,32 @@ def aggregate_igu_groups(
     after_breakage = acceptable_igus * (1.0 - processes.breakage_rate_global)
     after_humidity = after_breakage * (1.0 - processes.humidity_failure_rate)
 
-    # Simple pane-count logic: single/double/triple; mixed batches are currently not supported.
-    if all(g.glazing_type == "single" for g in groups):
-        panes_per_igu = 1
-    elif all(g.glazing_type == "double" for g in groups):
-        panes_per_igu = 2
-    elif all(g.glazing_type == "triple" for g in groups):
-        panes_per_igu = 3
-    else:
-        raise ValueError("Mixed glazing types in batch are not supported.")
+    # Calculate weighted average panes per IGU
+    total_quantity_acceptable = 0
+    total_panes_sum = 0.0
+    for g in groups:
+        # Only consider groups that contribute to acceptable_igus for the weighted average
+        # This is a simplification, assuming the distribution of glazing types among acceptable IGUs
+        # is similar to the overall distribution.
+        # A more precise approach would be to track acceptable_igus per group.
+        if g.condition.reuse_allowed and not g.condition.cracks_chips and \
+           g.condition.visible_edge_seal_condition != "unacceptable" and not g.condition.visible_fogging:
+            
+            panes_in_group = 0
+            if g.glazing_type == "single":
+                panes_in_group = 1
+            elif g.glazing_type == "double":
+                panes_in_group = 2
+            elif g.glazing_type == "triple":
+                panes_in_group = 3
+            else:
+                # Should not happen if GlazingType is an Enum
+                raise ValueError(f"Unsupported glazing type: {g.glazing_type}")
+            
+            total_panes_sum += g.quantity * panes_in_group
+            total_quantity_acceptable += g.quantity
+
+    panes_per_igu = total_panes_sum / total_quantity_acceptable if total_quantity_acceptable > 0 else 0.0
 
     total_panes = after_humidity * panes_per_igu * processes.split_yield
     remanufactured_igus_raw = floor(total_panes / panes_per_igu)
@@ -197,45 +214,6 @@ def aggregate_igu_groups(
         "remanufactured_igus": float(remanufactured_igus),
         "remanufactured_area_m2": remanufactured_area_m2,
         "average_area_per_igu": average_area_per_igu,
-    }
-
-
-def compute_igu_mass_totals(
-    groups: List[IGUGroup], stats: Dict[str, float]
-) -> Dict[str, float]:
-    """
-    Compute IGU mass totals for the project batch:
-      - total_mass_kg / total_mass_t
-      - acceptable_mass_kg (mass associated with acceptable_igus)
-      - remanufactured_mass_kg (mass associated with remanufactured_igus)
-      - avg_mass_per_igu_kg
-    """
-    total_mass_kg = 0.0
-
-    for g in groups:
-        area_per_igu = (g.unit_width_mm / 1000.0) * (g.unit_height_mm / 1000.0)
-        m2 = area_per_igu * g.quantity
-        mass_per_m2 = (
-            g.mass_per_m2_override
-            if g.mass_per_m2_override is not None
-            else default_mass_per_m2(g.glazing_type)
-        )
-        total_mass_kg += m2 * mass_per_m2
-
-    total_mass_t = total_mass_kg / 1000.0
-    avg_mass_per_igu_kg = (
-        total_mass_kg / stats["total_igus"] if stats["total_igus"] > 0 else 0.0
-    )
-
-    acceptable_mass_kg = avg_mass_per_igu_kg * stats["acceptable_igus"]
-    remanufactured_mass_kg = avg_mass_per_igu_kg * stats["remanufactured_igus"]
-
-    return {
-        "total_mass_kg": total_mass_kg,
-        "total_mass_t": total_mass_t,
-        "acceptable_mass_kg": acceptable_mass_kg,
-        "remanufactured_mass_kg": remanufactured_mass_kg,
-        "avg_mass_per_igu_kg": avg_mass_per_igu_kg,
     }
 
 
@@ -393,4 +371,61 @@ def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, 
         "glass_kg": mass_glass_kg,
         "sealant_kg": mass_sealant_kg,
         "spacer_kg": mass_spacer_kg
+    }
+
+
+def compute_igu_mass_totals(
+    groups: List[IGUGroup], stats: Dict[str, float], seal: Optional[SealGeometry] = None
+) -> Dict[str, float]:
+    """
+    Compute IGU mass totals for the project batch:
+      - total_mass_kg / total_mass_t
+      - acceptable_mass_kg (mass associated with acceptable_igus)
+      - remanufactured_mass_kg (mass associated with remanufactured_igus)
+      - avg_mass_per_igu_kg
+      
+    If 'seal' is provided, performs detailed calculation summing Glass + Sealant + Spacer.
+    Arguments:
+        groups: List of IGUGroup
+        stats: Dictionary of aggregated stats (from aggregate_igu_groups)
+        seal: Optional SealGeometry for accurate material mass calculation
+    """
+    total_mass_kg = 0.0
+
+    for g in groups:
+        # If we have a seal geometry, use independent calculation summing components
+        if seal is not None:
+            mats = calculate_material_masses(g, seal)
+            # calculate_material_masses returns TOTAL mass for the group (all items)
+            group_mass_kg = mats["glass_kg"] + mats["sealant_kg"] + mats["spacer_kg"]
+            total_mass_kg += group_mass_kg
+        else:
+            # Fallback to simplified Area * Mass/m2 logic
+            area_per_igu = (g.unit_width_mm / 1000.0) * (g.unit_height_mm / 1000.0)
+            m2 = area_per_igu * g.quantity
+            mass_per_m2 = (
+                g.mass_per_m2_override
+                if g.mass_per_m2_override is not None
+                else default_mass_per_m2(g.glazing_type)
+            )
+            total_mass_kg += m2 * mass_per_m2
+
+    total_mass_t = total_mass_kg / 1000.0
+    
+    # Avg mass per IGU based on total count
+    total_igus_count = stats.get("total_igus", 0.0)
+    avg_mass_per_igu_kg = (
+        total_mass_kg / total_igus_count if total_igus_count > 0 else 0.0
+    )
+
+    # Derived masses for fractions
+    acceptable_mass_kg = avg_mass_per_igu_kg * stats.get("acceptable_igus", 0.0)
+    remanufactured_mass_kg = avg_mass_per_igu_kg * stats.get("remanufactured_igus", 0.0)
+
+    return {
+        "total_mass_kg": total_mass_kg,
+        "total_mass_t": total_mass_t,
+        "acceptable_mass_kg": acceptable_mass_kg,
+        "remanufactured_mass_kg": remanufactured_mass_kg,
+        "avg_mass_per_igu_kg": avg_mass_per_igu_kg,
     }

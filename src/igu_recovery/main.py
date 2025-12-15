@@ -17,7 +17,7 @@ from .utils.input_helpers import (
     prompt_choice, prompt_location, prompt_igu_source, define_igu_system_from_manual,
     define_igu_system_from_database, ask_igu_condition_and_eligibility, print_igu_geometry_overview,
     print_scenario_overview, print_header, prompt_seal_geometry, parse_db_row_to_group,
-    prompt_yes_no, style_prompt, C_SUCCESS, C_RESET, C_HEADER
+    prompt_yes_no, style_prompt, C_SUCCESS, C_RESET, C_HEADER, format_and_clean_report_dataframe
 )
 from .utils.calculations import (
     aggregate_igu_groups, compute_igu_mass_totals, haversine_km, get_osrm_distance
@@ -220,8 +220,10 @@ def run_automated_analysis(processes: ProcessSettings):
         total_igus = int(input(style_prompt("Number of IGUs [default=1]: ") or "1"))
         unit_width_mm = float(input(style_prompt("Width (mm) [default=1000]: ") or "1000"))
         unit_height_mm = float(input(style_prompt("Height (mm) [default=1000]: ") or "1000"))
-    except ValueError:
-        logger.error("Invalid input. Using defaults (1 unit, 1m x 1m).")
+        if total_igus < 1: raise ValueError("IGU count must be >= 1")
+        if unit_width_mm <= 0 or unit_height_mm <= 0: raise ValueError("Dimensions must be positive")
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}. Using defaults (1 unit, 1m x 1m).")
         total_igus = 1
         unit_width_mm = 1000.0
         unit_height_mm = 1000.0
@@ -284,75 +286,79 @@ def execute_analysis_batch(
     print_header(f"Starting Analysis of {len(df)} products x {len(scenarios)} scenarios...")
     
     for idx, row in df.iterrows():
-        product_name = row['win_name']
-        group_id = row.get('Group/ID', 'N/A')
-        print(f"Processing ({idx+1}/{len(df)}): {product_name}...")
-        
-        # Product Results
-        product_results = []
-        
-        # Create Group
-        group = parse_db_row_to_group(row, total_igus, unit_width_mm, unit_height_mm, seal_geometry)
-        group.condition = global_condition
-        
-        # Stats
-        stats = aggregate_igu_groups([group], processes)
-        masses = compute_igu_mass_totals([group], stats)
-        
-        # Init Flow
-        flow_start = FlowState(
-            igus=float(group.quantity),
-            area_m2=stats["total_IGU_surface_area_m2"],
-            mass_kg=masses["total_mass_kg"]
-        )
-        
-        # Run Scenarios
-        for sc_name, sc_func in scenarios:
-            try:
-                # Set specific args per scenario
-                res = None
-                if sc_name == "System Reuse":
-                    res = run_scenario_system_reuse(processes, transport, group, flow_start, stats, masses, interactive=False)
-                elif sc_name == "Component Reuse":
-                    res = run_scenario_component_reuse(processes, transport, group, seal_geometry, flow_start, stats, interactive=False)
-                elif sc_name == "Component Repurpose":
-                    res = run_scenario_component_repurpose(processes, transport, group, flow_start, stats, interactive=False)
-                elif sc_name == "Closed-loop Recycling":
-                    # For Closed-loop, we use the recycling destination
-                    transport_recycling = TransportModeConfig(**transport.__dict__)
-                    transport_recycling.reuse = recycling_dst
-                    res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, flow_start, interactive=False)
-                elif sc_name == "Open-loop Recycling":
-                    res = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=False)
-                elif sc_name == "Straight to Landfill":
-                    res = run_scenario_landfill(processes, transport, group, flow_start, interactive=False)
-                
-                if res:
-                    entry = {
-                        "Product Group": group_id,
-                        "Product Name": product_name,
-                        "Scenario": sc_name,
-                        "Total Emissions (kgCO2e)": res.total_emissions_kgco2,
-                        "Final Yield (%)": res.yield_percent,
-                        "Final Mass (kg)": res.final_mass_kg,
-                        "Intensity (kgCO2e/m2 output)": (res.total_emissions_kgco2 / res.final_area_m2) if res.final_area_m2 > 0 else 0,
-                        # Route Metadata
-                        "Origin": f"{transport.origin.lat},{transport.origin.lon}",
-                        "Processor": f"{transport.processor.lat},{transport.processor.lon}",
-                        "Route A Mode": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).mode,
-                        "Route A Dist (km)": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).truck_km + processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).ferry_km,
-                    }
+        try:
+            product_name = row['win_name']
+            group_id = row.get('Group/ID', 'N/A')
+            print(f"Processing ({idx+1}/{len(df)}): {product_name}...")
+            
+            # Product Results
+            product_results = []
+            
+            # Create Group
+            group = parse_db_row_to_group(row, total_igus, unit_width_mm, unit_height_mm, seal_geometry)
+            group.condition = global_condition
+            
+            # Stats
+            stats = aggregate_igu_groups([group], processes)
+            masses = compute_igu_mass_totals([group], stats, seal=seal_geometry)
+            
+            # Init Flow
+            flow_start = FlowState(
+                igus=float(group.quantity),
+                area_m2=stats["total_IGU_surface_area_m2"],
+                mass_kg=masses["total_mass_kg"]
+            )
+            
+            # Run Scenarios
+            for sc_name, sc_func in scenarios:
+                try:
+                    # Set specific args per scenario
+                    res = None
+                    if sc_name == "System Reuse":
+                        res = run_scenario_system_reuse(processes, transport, group, flow_start, stats, masses, interactive=False)
+                    elif sc_name == "Component Reuse":
+                        res = run_scenario_component_reuse(processes, transport, group, seal_geometry, flow_start, stats, interactive=False)
+                    elif sc_name == "Component Repurpose":
+                        res = run_scenario_component_repurpose(processes, transport, group, flow_start, stats, interactive=False)
+                    elif sc_name == "Closed-loop Recycling":
+                        # For Closed-loop, we use the recycling destination
+                        transport_recycling = TransportModeConfig(**transport.__dict__)
+                        transport_recycling.reuse = recycling_dst
+                        res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, flow_start, interactive=False)
+                    elif sc_name == "Open-loop Recycling":
+                        res = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=False)
+                    elif sc_name == "Straight to Landfill":
+                        res = run_scenario_landfill(processes, transport, group, flow_start, interactive=False)
                     
-                    # Explode by_stage dictionary into columns
-                    if res.by_stage:
-                        for stage, val in res.by_stage.items():
-                            entry[f"Emissions_{stage}"] = val
-                            
-                    results.append(entry)
-                    product_results.append(entry)
-                
-            except Exception as e:
-                logger.error(f"Error processing {product_name} - {sc_name}: {e}")
+                    if res:
+                        entry = {
+                            "Product Group": group_id,
+                            "Product Name": product_name,
+                            "Scenario": sc_name,
+                            "Total Emissions (kgCO2e)": res.total_emissions_kgco2,
+                            "Final Yield (%)": res.yield_percent,
+                            "Final Mass (kg)": res.final_mass_kg,
+                            "Intensity (kgCO2e/m2 output)": (res.total_emissions_kgco2 / res.final_area_m2) if res.final_area_m2 > 0 else 0,
+                            # Route Metadata
+                            "Origin": f"{transport.origin.lat},{transport.origin.lon}",
+                            "Processor": f"{transport.processor.lat},{transport.processor.lon}",
+                            "Route A Mode": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).mode,
+                            "Route A Dist (km)": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).truck_km + processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).ferry_km,
+                        }
+                        
+                        # Explode by_stage dictionary into columns
+                        if res.by_stage:
+                            for stage, val in res.by_stage.items():
+                                entry[f"Emissions_{stage}"] = val
+                                
+                        results.append(entry)
+                        product_results.append(entry)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {product_name} - {sc_name}: {e}")
+        except Exception as e_prod:
+            logger.error(f"CRITICAL ERROR processing product row {idx}: {e_prod}. Skipping product.")
+            continue
                 
     # 4. Save Report
     if not results:
@@ -361,40 +367,26 @@ def execute_analysis_batch(
 
     report_df = pd.DataFrame(results)
     
-    # Organize columns
-    # Base columns
-    base_cols = [
-        "Product Group", "Product Name", "Scenario", 
-        "Total Emissions (kgCO2e)", "Final Yield (%)", "Final Mass (kg)", "Intensity (kgCO2e/m2 output)",
-        "Origin", "Processor", "Route A Mode", "Route A Dist (km)"
-    ]
-    
-    # Dynamic columns (Emission breakdown)
-    # Filter for columns starting with "Emissions_"
-    emission_cols = [c for c in report_df.columns if c.startswith("Emissions_")]
-    # Sort them for consistency? or keep order?
-    emission_cols.sort()
-    
-    # Final order
-    final_cols = base_cols + emission_cols
-    # Ensure all exist (some might not if dict extraction failed?)
-    final_cols = [c for c in final_cols if c in report_df.columns]
-    
-    report_df = report_df[final_cols]
-    
-    # Round numerical columns to 3 decimal places
-    # Apply to all except text
-    numeric_cols = report_df.select_dtypes(include=['float', 'int']).columns
-    report_df[numeric_cols] = report_df[numeric_cols].round(3)
+    # --- PHASE 4: REPORT REFINEMENT (Option A) ---
+    report_df = format_and_clean_report_dataframe(report_df)
 
-    out_file = "d:\\VITRIFY\\automated_analysis_report.csv"
-    report_df.to_csv(out_file, index=False)
+    basename = "automated_analysis_report"
+    out_file = f"d:\\VITRIFY\\{basename}.csv"
     
-    print_header("Analysis Complete")
-    print(f"Report saved to: {out_file}")
+    try:
+        report_df.to_csv(out_file, index=False)
+        print(f"Report saved to: {out_file}")
+    except PermissionError:
+        # Fallback if file is locked
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fallback_file = f"d:\\VITRIFY\\{basename}_{ts}.csv"
+        logger.warning(f"Could not save to {out_file} (File Locked?). Saving to {fallback_file} instead.")
+        report_df.to_csv(fallback_file, index=False)
+        print(f"Report saved to: {fallback_file}")
+        out_file = fallback_file # Update for visualization linkage
     if not report_df.empty:
         # Show breakdown of mean total emissions by scenario
-        print(report_df.groupby("Scenario")[["Total Emissions (kgCO2e)", "Final Yield (%)"]].mean())
+        print(report_df.groupby("Scenario")[["Total Emissions (kgCO2e)", "Yield (%)"]].mean())
     
     # --- VISUALIZATION (BATCH) ---
     try:
@@ -518,7 +510,7 @@ def main():
     
     # Re-calculate stats with conditions applied (not fully used for filtering in main flow yet, but available)
     stats = aggregate_igu_groups([group], processes)
-    masses = compute_igu_mass_totals([group], stats)
+    masses = compute_igu_mass_totals([group], stats, seal_geometry)
     
     # 7. RECOVERY SCENARIO SELECTION
     print_header("Step 7: Recovery Scenario Selection")

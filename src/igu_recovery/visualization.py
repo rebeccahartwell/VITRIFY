@@ -4,6 +4,9 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional
 from .models import ScenarioResult
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # VISUALIZER CLASS
@@ -226,6 +229,11 @@ class Visualizer:
             data_to_plot.append(data)
             labels.append(sc)
             
+        if not data_to_plot:
+            logger.warning("No data to plot in batch distribution.")
+            plt.close(fig)
+            return
+
         bplot = ax.boxplot(data_to_plot, patch_artist=True, labels=labels,
                            flierprops=dict(marker='o', markersize=4, alpha=0.5, color=self.colors['neutral']))
         
@@ -255,13 +263,18 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(11, 8), dpi=150)
         
         scenarios = df['Scenario'].unique()
+        if len(scenarios) == 0:
+            logger.warning("No scenarios found for batch scatter plot.")
+            plt.close(fig)
+            return
+
         # Use a qualitative colormap from matplotlib
         cmap = plt.get_cmap('tab10') # or 'Set2' for softer
         
         for i, sc in enumerate(scenarios):
             subset = df[df['Scenario'] == sc]
             # Big bubbles with transparency
-            ax.scatter(subset['Final Yield (%)'], subset['Total Emissions (kgCO2e)'], 
+            ax.scatter(subset['Yield (%)'], subset['Total Emissions (kgCO2e)'], 
                        label=sc, alpha=0.6, edgecolors='white', linewidth=1.5, s=150, color=cmap(i))
             
         ax.set_xlabel("Material Yield (%)", fontweight='bold')
@@ -282,10 +295,10 @@ class Visualizer:
 
     def _plot_batch_intensity(self, df: pd.DataFrame):
         """Bar chart of average Intensity (kgCO2e/m2 output) where yield > 0."""
-        subset = df[df['Final Yield (%)'] > 1.0]
+        subset = df[df['Yield (%)'] > 1.0]
         if subset.empty: return
 
-        grouped = subset.groupby('Scenario')['Intensity (kgCO2e/m2 output)'].mean().sort_values()
+        grouped = subset.groupby('Scenario')['Intensity (kgCO2e/m²)'].mean().sort_values()
         if grouped.empty: return
 
         fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
