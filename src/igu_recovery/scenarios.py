@@ -22,15 +22,7 @@ from .utils.input_helpers import prompt_yes_no, prompt_location, prompt_choice, 
 
 logger = logging.getLogger(__name__)
 
-def calc_landfill_transport(mass_kg: float, origin: Location, landfill: Location, transport: TransportModeConfig) -> float:
-    """Helper to calculate truck transport emissions to landfill."""
-    if mass_kg <= 0 or not landfill:
-        return 0.0
-    dist_km = haversine_km(origin, landfill)
-    # Applying backhaul factor? Typically waste transport might be one-way or assume backhauling. 
-    # Let's assume standard truck emission factor and distance.
-    # Note: Using truck emission factor from config.
-    return (mass_kg / 1000.0) * dist_km * transport.emissionfactor_truck
+
 
 def get_route_emissions(mass_kg: float, route_key: str, processes: ProcessSettings, transport: TransportModeConfig) -> float:
     """
@@ -81,7 +73,7 @@ def run_scenario_landfill(
     # Transport Origin -> Landfill
     landfill_kgco2 = 0.0
     if transport.landfill:
-        landfill_kgco2 = calc_landfill_transport(total_mass_kg, transport.origin, transport.landfill, transport)
+        landfill_kgco2 = get_route_emissions(total_mass_kg, "origin_to_landfill", processes, transport)
     else:
         logger.warning("No landfill location defined! Assuming 0 transport emissions.")
         
@@ -192,11 +184,11 @@ def run_scenario_system_reuse(
     if transport.landfill:
         # 1. Removal Yield Loss (Allocated at Origin)
         mass_loss_removal = flow_start.mass_kg - flow_post_removal.mass_kg
-        waste_transport_kgco2 += calc_landfill_transport(mass_loss_removal, transport.origin, transport.landfill, transport)
+        waste_transport_kgco2 += get_route_emissions(mass_loss_removal, "origin_to_landfill", processes, transport)
         
         # 2. Repair Yield Loss (Allocated at Processor)
         mass_loss_repair = flow_post_removal.mass_kg - flow_post_repair.mass_kg
-        waste_transport_kgco2 += calc_landfill_transport(mass_loss_repair, transport.processor, transport.landfill, transport)
+        waste_transport_kgco2 += get_route_emissions(mass_loss_repair, "processor_to_landfill", processes, transport)
 
     total = dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + repair_kgco2 + transport_B_kgco2 + install_kgco2 + waste_transport_kgco2
     
@@ -333,11 +325,11 @@ def run_scenario_component_reuse(
     if transport.landfill:
          # 1. Removal Yield Loss (Origin)
          mass_loss_removal = flow_start.mass_kg - flow_post_removal.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_removal, transport.origin, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_removal, "origin_to_landfill", processes, transport)
          
          # 2. Disassembly Yield Loss (Processor)
          mass_loss_disassembly = flow_post_removal.mass_kg - flow_post_disassembly.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_disassembly, transport.processor, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_disassembly, "processor_to_landfill", processes, transport)
 
     total += waste_transport_kgco2
 
@@ -446,11 +438,11 @@ def run_scenario_component_repurpose(
     if transport.landfill:
          # 1. Removal Yield Loss (Origin)
          mass_loss_removal = flow_start.mass_kg - flow_post_removal.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_removal, transport.origin, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_removal, "origin_to_landfill", processes, transport)
          
          # 2. Disassembly Yield Loss (Processor)
          mass_loss_disassembly = flow_post_removal.mass_kg - flow_post_disassembly.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_disassembly, transport.processor, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_disassembly, "processor_to_landfill", processes, transport)
 
     total += waste_transport_kgco2
     
@@ -562,13 +554,13 @@ def run_scenario_closed_loop_recycling(
     if transport.landfill:
          # 1. Removal Yield Loss (Origin)
          mass_loss_removal = flow_start.mass_kg - flow_step1.mass_kg # flow_step1 is post-removal
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_removal, transport.origin, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_removal, "origin_to_landfill", processes, transport)
          
          # 2. Breaking Yield Loss (Origin if !send_intact)
          mass_loss_break = flow_step1.mass_kg - flow_step2.mass_kg
          if not send_intact:
              # Broken ON SITE, so loss is at Origin
-             waste_transport_kgco2 += calc_landfill_transport(mass_loss_break, transport.origin, transport.landfill, transport)
+             waste_transport_kgco2 += get_route_emissions(mass_loss_break, "origin_to_landfill", processes, transport)
          else:
              # Broken AT PROCESSOR (implicit?), actually flow_step2 applies break yield too?
              # Logic check: if send_intact, flow_step2 is reduced by yield_break?
@@ -577,12 +569,12 @@ def run_scenario_closed_loop_recycling(
              # The existing code structure calculates 'breaking_kgco2' only if !send_intact.
              # If send_intact, presumably breaking happens at float plant or processor?
              # Let's assume if send_intact, any yield loss (breakage) happens at Processor.
-             waste_transport_kgco2 += calc_landfill_transport(mass_loss_break, transport.processor, transport.landfill, transport)
+             waste_transport_kgco2 += get_route_emissions(mass_loss_break, "processor_to_landfill", processes, transport)
              
          # 3. Cullet Share Loss (Processor -> Float Plant yield)
          # flow_float is post-cullet-share
          mass_loss_float = flow_step2.mass_kg - flow_float.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_float, transport.processor, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_float, "processor_to_landfill", processes, transport)
 
     total += waste_transport_kgco2
     
@@ -698,20 +690,20 @@ def run_scenario_open_loop_recycling(
     if transport.landfill:
          # 1. Removal Yield Loss (Origin)
          mass_loss_removal = flow_start.mass_kg - flow_step1.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_removal, transport.origin, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_removal, "origin_to_landfill", processes, transport)
          
          # 2. Breaking Yield Loss
          mass_loss_break = flow_step1.mass_kg - flow_step2.mass_kg
          if not send_intact:
-             waste_transport_kgco2 += calc_landfill_transport(mass_loss_break, transport.origin, transport.landfill, transport)
+             waste_transport_kgco2 += get_route_emissions(mass_loss_break, "origin_to_landfill", processes, transport)
          else:
-             waste_transport_kgco2 += calc_landfill_transport(mass_loss_break, transport.processor, transport.landfill, transport)
+             waste_transport_kgco2 += get_route_emissions(mass_loss_break, "processor_to_landfill", processes, transport)
              
          # 3. Useful Fraction Loss (Processor)
          # flow_step2 is mass entering processor (after break)
          # flow_final is mass successfully recycled
          mass_loss_final = flow_step2.mass_kg - flow_final.mass_kg
-         waste_transport_kgco2 += calc_landfill_transport(mass_loss_final, transport.processor, transport.landfill, transport)
+         waste_transport_kgco2 += get_route_emissions(mass_loss_final, "processor_to_landfill", processes, transport)
 
     total += waste_transport_kgco2
     

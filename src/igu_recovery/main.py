@@ -79,7 +79,6 @@ def configure_route(name: str, origin: Location, destination: Location, interact
         
         if has_ferry:
             # Auto-configure ferry split for batch mode
-            # Assume 50km ferry default if detected
             ferry_km_batch = 50.0
             truck_km_batch = max(0.0, final_km - ferry_km_batch)
             print(f"  -> Batch Mode: Auto-configuring {default_mode} (assumed 50km ferry).")
@@ -87,14 +86,33 @@ def configure_route(name: str, origin: Location, destination: Location, interact
         else:
             return RouteConfig(mode="HGV lorry", truck_km=final_km, ferry_km=0.0)
 
+    # INTERACTIVE MODE
+    
+    # 1. OSRM Success: Auto-accept to save user clicks (User Request)
+    if osrm_km and not has_ferry:
+        print(f"{C_SUCCESS}  -> Auto-accepted OSRM route: {osrm_km:.1f} km (Road){C_RESET}")
+        return RouteConfig(mode="HGV lorry", truck_km=osrm_km, ferry_km=0.0)
+        
+    # 2. OSRM Success but FERRY detected: Must prompt for split (unavoidable ambiguity)
+    if osrm_km and has_ferry:
+         print(f"{C_HEADER}  -> Ferry detected! Please confirm split.{C_RESET}")
+
+    # 3. OSRM Failed: Auto-accept fallback to avoid annoying prompt loops (User Request)
+    if not osrm_km:
+        print(f"{C_HEADER}  -> OSRM failed. Auto-accepting estimated road distance (Air x 1.3): {est_road_km} km.{C_RESET}")
+        return RouteConfig(mode="HGV lorry", truck_km=float(est_road_km), ferry_km=0.0)
+
+    # 4. Fallback Prompt (Should rarely be reached now, mainly if has_ferry)
     mode = prompt_choice(f"Transport Mode for {name}", ["HGV lorry", "HGV lorry+ferry"], default=default_mode)
     
     truck_km = 0.0
     ferry_km = 0.0
     
     if mode == "HGV lorry":
-        truck_km_str = input(style_prompt(f"Road distance (km) [default={est_road_km}]: ")).strip()
-        truck_km = float(truck_km_str) if truck_km_str else float(est_road_km)
+        # If we have osrm_km (but maybe user overrode ferry detection?), use it as default
+        def_km = osrm_km if osrm_km else est_road_km
+        truck_km_str = input(style_prompt(f"Road distance (km) [default={def_km:.1f}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(def_km)
     else:
         # Ferry
         print("For Ferry mode, please specify the split:")
@@ -102,9 +120,9 @@ def configure_route(name: str, origin: Location, destination: Location, interact
         ferry_km = float(ferry_km_str) if ferry_km_str else 50.0
         
         # Remaining distance for truck
-        est_residual_road = int(max(0, est_road_km - ferry_km))
-        truck_km_str = input(style_prompt(f"  Road distance (km) [default={est_residual_road}]: ")).strip()
-        truck_km = float(truck_km_str) if truck_km_str else float(est_residual_road)
+        def_road = max(0, (osrm_km if osrm_km else est_road_km) - ferry_km)
+        truck_km_str = input(style_prompt(f"  Road distance (km) [default={def_road:.1f}]: ")).strip()
+        truck_km = float(truck_km_str) if truck_km_str else float(def_road)
         
     return RouteConfig(mode=mode, truck_km=truck_km, ferry_km=ferry_km)
 
@@ -252,8 +270,6 @@ def execute_analysis_batch(
     scenarios = [
         ("System Reuse", run_scenario_system_reuse),
         ("Component Reuse", run_scenario_component_reuse),
-        ("Component Repurpose", run_scenario_component_repurpose),
-        ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
         ("Component Repurpose", run_scenario_component_repurpose),
         ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
         ("Open-loop Recycling", run_scenario_open_loop_recycling),
@@ -546,6 +562,111 @@ def main():
     elif scenario_choice == "landfill":
         result = run_scenario_landfill(processes, transport, group, flow_start, interactive=True)
         print_scenario_overview(result)
+
+    # 8. VISUALIZATION & COMPARISON
+    print("\n" + "="*60)
+    print("Post-Analysis Visualization")
+    print("="*60)
+    print("Would you like to:")
+    print("  a) Visualize emissions for this scenario only")
+    print("  b) Compare this scenario with ALL other scenarios (will calculate others now)")
+    print("  c) Exit")
+    
+    viz_choice = prompt_choice("Select option", ["a", "b", "c"], default="c")
+    
+    if viz_choice == "a":
+        from .visualization import plot_single_scenario
+        if 'result' in locals() and result:
+            plot_single_scenario(result)
+        else:
+            print("No result to visualize.")
+            
+    elif viz_choice == "b":
+        from .visualization import plot_comparison
+        print("\nCalculations running for comparisons...")
+        
+        # Prepare for bulk run
+        # We need to run all scenarios non-interactively
+        # We need to manage 'transport.reuse' carefully as it changes per scenario
+        
+        comparison_results = []
+        
+        # Define the list of scenarios to run (name, func)
+        all_scenarios = [
+            ("System Reuse", run_scenario_system_reuse),
+            ("Component Reuse", run_scenario_component_reuse),
+            ("Component Repurpose", run_scenario_component_repurpose),
+            ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
+            ("Open-loop Recycling", run_scenario_open_loop_recycling),
+            ("Straight to Landfill", run_scenario_landfill)
+        ]
+        
+        # We reuse the initial stats and masses
+        # Reset transport reuse to generic if needed, but specifics are handled inside the loop
+        
+        for sc_name, sc_func in all_scenarios:
+            # Create a clean transport config copy to avoid side effects
+            # (Though our scenarios mutate it? Yes, prompt_location mutates transport.reuse)
+            # In non-interactive mode, they assume it's set.
+            
+            t_copy = TransportModeConfig(**transport.__dict__)
+            
+            # Setup Specific Destinations for non-interactive run
+            # For System/Component Reuse/Repurpose: use reuse_dst (prompted earlier)
+            # For Closed-loop: use recycling_dst (prompted earlier)
+            # For Open-loop: use generic reuse_dst (or we should have prompted for recycling?)
+            # In main() we prompted for:
+            #   reuse_dst (for Reuse/Repurpose)
+            #   recycling_dst (for Recycling)
+            #   landfill_dst (for Landfill)
+            
+            if sc_name in ["System Reuse", "Component Reuse", "Component Repurpose"]:
+                t_copy.reuse = reuse_dst
+            elif sc_name in ["Closed-loop Recycling"]:
+                t_copy.reuse = recycling_dst
+            elif sc_name in ["Open-loop Recycling"]:
+                 # Open loop typically sends to "processor_to_recycling" config
+                 # which we configured with recycling_dst?
+                 # main() -> processes.route_configs["processor_to_recycling"] uses recycling_dst
+                 # the function run_scenario_open_loop uses the route config directly, 
+                 # and assumes transport.reuse is set if interactive.
+                 # safe to set it.
+                 t_copy.reuse = recycling_dst
+            elif sc_name == "Straight to Landfill":
+                t_copy.landfill = landfill_dst
+            
+            # Run
+            try:
+                # Dispatch based on signature
+                res_cmp = None
+                if sc_name == "System Reuse":
+                    res_cmp = run_scenario_system_reuse(processes, t_copy, group, flow_start, stats, masses, interactive=False)
+                elif sc_name == "Component Reuse":
+                    res_cmp = run_scenario_component_reuse(processes, t_copy, group, seal_geometry, flow_start, stats, interactive=False)
+                elif sc_name == "Component Repurpose":
+                    res_cmp = run_scenario_component_repurpose(processes, t_copy, group, flow_start, stats, interactive=False)
+                elif sc_name == "Closed-loop Recycling":
+                    res_cmp = run_scenario_closed_loop_recycling(processes, t_copy, group, flow_start, interactive=False)
+                elif sc_name == "Open-loop Recycling":
+                    res_cmp = run_scenario_open_loop_recycling(processes, t_copy, group, flow_start, interactive=False)
+                elif sc_name == "Straight to Landfill":
+                    res_cmp = run_scenario_landfill(processes, t_copy, group, flow_start, interactive=False)
+                
+                if res_cmp:
+                    comparison_results.append(res_cmp)
+            except Exception as e:
+                logger.error(f"Error calculating {sc_name} for comparison: {e}")
+                
+        # Print Text Table
+        print("\n" + "-"*80)
+        print(f"{'Scenario':<25} | {'Emissions (kgCO2e)':<20} | {'Yield %':<10}")
+        print("-" * 60)
+        for r in comparison_results:
+             print(f"{r.scenario_name:<25} | {r.total_emissions_kgco2:<20.2f} | {r.yield_percent:<10.1f}")
+        print("-" * 80)
+        
+        # Plot
+        plot_comparison(comparison_results)
 
 if __name__ == "__main__":
     main()

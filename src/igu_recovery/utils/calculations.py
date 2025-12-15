@@ -47,8 +47,10 @@ def get_osrm_distance(origin: Location, dest: Location) -> Tuple[Optional[float]
     url = f"http://router.project-osrm.org/route/v1/driving/{origin.lon},{origin.lat};{dest.lon},{dest.lat}?overview=false&steps=true"
     
     try:
-        # 2s timeout
-        resp = requests.get(url, timeout=2.0)
+        # Custom User-Agent to avoid blocking
+        headers = {'User-Agent': 'IGURecoveryTool/1.0'}
+        # 10s timeout
+        resp = requests.get(url, headers=headers, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
             if "routes" in data and len(data["routes"]) > 0:
