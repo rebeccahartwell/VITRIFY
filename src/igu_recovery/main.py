@@ -301,20 +301,6 @@ def execute_analysis_batch(
     # --- PHASE 4: REPORT REFINEMENT (Option A) ---
     report_df = format_and_clean_report_dataframe(report_df)
 
-    basename = "automated_analysis_report"
-    out_file = os.path.join(reports_dir, f"{basename}.csv")
-    
-    try:
-        report_df.to_csv(out_file, index=False)
-        print(f"Report saved to: {out_file}")
-    except PermissionError:
-        # Fallback if file is locked
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fallback_file = f"d:\\VITRIFY\\{basename}_{ts}.csv"
-        logger.warning(f"Could not save to {out_file} (File Locked?). Saving to {fallback_file} instead.")
-        report_df.to_csv(fallback_file, index=False)
-        print(f"Report saved to: {fallback_file}")
-        out_file = fallback_file # Update for visualization linkage
     if not report_df.empty:
         # Show breakdown of mean total emissions by scenario
         print(report_df.groupby("Scenario")[["Total Emissions (kgCO2e)", "Yield (%)"]].mean())
@@ -323,9 +309,20 @@ def execute_analysis_batch(
     try:
         vis = Visualizer(mode="batch_run")
         vis.plot_batch_summary(report_df)
-        print(f"\nCharts saved to: {vis.session_dir}")
+        
+        # Save CSV to the same session folder as plots
+        basename = "automated_analysis_report"
+        out_file = os.path.join(vis.session_dir, f"{basename}.csv")
+        report_df.to_csv(out_file, index=False)
+        print(f"\nReport saved to: {out_file}")
+        print(f"Charts saved to: {vis.session_dir}")
     except Exception as e:
         logger.error(f"Batch visualization failed: {e}")
+        # Fallback: save CSV to default reports dir
+        basename = "automated_analysis_report"
+        out_file = os.path.join(reports_dir, f"{basename}.csv")
+        report_df.to_csv(out_file, index=False)
+        print(f"Report saved to: {out_file}")
 
 
 def main():

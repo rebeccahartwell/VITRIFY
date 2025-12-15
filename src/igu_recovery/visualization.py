@@ -302,8 +302,11 @@ class Visualizer:
 
         fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
         
-        # Horizontal Bars
-        bars = ax.barh(grouped.index, grouped.values, color=self.colors['yield_dark'], alpha=0.8, edgecolor='none')
+        # Gradient colors from green (low intensity = good) to red (high intensity = bad)
+        colors = plt.cm.RdYlGn_r([i/len(grouped) for i in range(len(grouped))])
+        
+        # Horizontal Bars with gradient
+        bars = ax.barh(grouped.index, grouped.values, color=colors, edgecolor='white', linewidth=1.5)
         
         ax.set_xlabel("Avg Intensity (kgCO2e per m² recovered)", fontweight='bold')
         ax.set_title("Carbon Intensity of Recovered Glass", loc='left', pad=15)
@@ -779,12 +782,7 @@ class Visualizer:
         self.plot_boxplot_batch(df)
         self.plot_violin_batch(df)
         
-        # Heatmaps
-        self.plot_heatmap(df, 'Total Emissions (kgCO2e)')
-        self.plot_heatmap(df, 'Yield (%)')
-        
-        # Intensity
-        self.plot_horizontal_intensity(df)
+        # Intensity (with gradient colors)
         self._plot_batch_intensity(df)
         
         print(f"\n   [Complete] All batch plots saved to: {self.session_dir}")

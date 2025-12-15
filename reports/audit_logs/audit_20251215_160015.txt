@@ -1,4 +1,0 @@
-=== EMISSION CALCULATION AUDIT LOG ===
-Session: 20251215_160015
-======================================
-
