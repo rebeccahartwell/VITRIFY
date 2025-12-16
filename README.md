@@ -1,31 +1,35 @@
 # VITRIFY - IGU Recovery Environmental Impact Prototype
 
-This project calculates and compares the environmental impact (Carbon Emissions in kg CO2e) of various recovery scenarios for Insulating Glass Units (IGUs) removed from buildings. It provides decision support for Reuse, Repair, Repurposing, and Recycling pathways.
+**VITRIFY** is a robust environmental impact assessment tool designed to calculate the Carbon Footprint (kg CO2e) of recovering Insulating Glass Units (IGUs). It compares 11 distinct recovery scenarios, from direct reuse to recycling and landfill, helping decision-makers choose the most sustainable path.
 
-## Features
+## 🚀 Key Capabilities
 
-- **11 Recovery Paths**: Detailed analysis of variants including:
-  - **System Reuse**: Direct Reuse vs. Reuse w/ Repair.
-  - **Component Reuse**: Disassembly and Reconditioning.
-  - **Component Repurpose**: Light, Medium, and Heavy intensity variants.
-  - **Closed-loop Recycling**: Intact vs. Broken on-site (Float plant quality checks).
-  - **Open-loop Recycling**: Intact vs. Broken on-site (Glasswool/Container outputs).
-  - **Landfill**: Baseline comparison.
-  
-- **Batch Analysis**:
-  - Automatically processes entire product databases (Excel).
-  - Runs **all 11 scenarios** for every product.
-  - Generates comprehensive CSV reports in `reports/`.
-  - Robust error handling and validation.
+### 1. Recovery Scenarios (The 11 Paths)
+The tool models the detailed physics and logistics of:
+- **System Reuse**: Safely removing and re-installing the IGU (with optional repair).
+- **Component Reuse**: Disassembling the IGU to recover panes for re-manufacturing.
+- **Component Repurpose**: Re-using glass in lower-grade applications (3 intensity levels).
+- **Closed-loop Recycling**: Returning cullet to a flat glass float plant (High quality).
+- **Open-loop Recycling**: Down-cycling to glass wool or container glass.
+- **Landfill**: The baseline "business as usual" disposal.
 
-- **Detailed Reporting**:
-  - **CSV**: KPIs (Yield, Emissions, Mass) and stage-by-stage breakdowns.
-  - **Plots**: Automated generation of emission distribution charts.
-  - **Markdown Breakdowns**: Granular logs for deep-dive analysis.
+### 2. Advanced Inputs
+- **Complex Glazing**: Supports **Single, Double, and Triple** glazing units.
+- **Detailed Geometry**: Configurable pane thicknesses (inner/outer/centre), cavity widths, and sealant masses.
+- **Material Specifics**: Select from Annealed/Tempered/Laminated glass, various sealants (Polysulfide, Silicone, etc.), and spacers (Aluminium, Steel, Warm Edge).
 
-- **Transport Modeling**: Configurable Truck/Ferry routes with emission factors (DEFRA 2024, Z.E. Trucks, etc.).
+### 3. Logistics & Transport
+- **Multi-Leg Routing**: Models `Origin -> Processor` and `Processor -> Destination`.
+- **Geocoding & OSRM**: Automatically calculates real-world driving distances from city names (e.g., "London" to "Birmingham").
+- **Transport Modes**: Choose between HGV Trucks (various emission standards like DEFRA 2024, Z.E. Electric) and Ferries.
 
-## Installation
+### 4. Yield & Waste
+- **Real-world Losses**: Accounts for breakage during removal, processing, and transport.
+- **Waste Allocation**: Automatically assigns emissions from broken/waste glass to the "Waste" category.
+
+---
+
+## 🛠️ Installation
 
 1.  **Clone the repository**:
     ```bash
@@ -33,72 +37,80 @@ This project calculates and compares the environmental impact (Carbon Emissions 
     cd VITRIFY
     ```
 
-2.  **Create and activate a virtual environment**:
+2.  **Set up Python Environment**:
     ```bash
     python -m venv .venv
-    # Windows:
-    .venv\Scripts\activate
-    # Unix:
-    source .venv/bin/activate
-    ```
-
-3.  **Install dependencies**:
-    ```bash
+    .venv\Scripts\activate  # Windows
+    # source .venv/bin/activate  # Mac/Linux
     pip install -r requirements.txt
     ```
 
-## Usage
+---
 
-The tool has a single entry point that offers both **Interactive (Single Run)** and **Batch (Automated)** modes.
+## 📖 Usage Guide
 
-### Run the Tool
+Run the tool via the command line:
 ```bash
 python src/Recovery_IGU_CO2.py
 ```
-*Or via module:*
-```bash
-python -m src.igu_recovery.main
-```
 
-### Modes
-1.  **Single Run (Interactive)**:
-    - Step-by-step prompts to define a specific IGU and scenario.
-    - ideal for quick checks or sensitivity analysis.
-    - Generates plots and Markdown breakdown for the single run.
+### Mode 1: Single Run (Interactive)
+Best for testing specific configurations or answering "What if?" questions.
 
-2.  **Automated Analysis (Batch)**:
-    - Loads the product database from `data/`.
-    - Asks for Global Parameters (Location, Transport assumptions) once.
-    - Iterates through the entire database.
-    - Saves results to `d:\VITRIFY\reports\automated_analysis_report.csv`.
+**Step-by-Step Example (Complex Triple Glazing Run):**
+1.  **Select Source**: `Manual`
+2.  **Define Geometry**:
+    - **Seal**: Primary 0.4x4mm, Secondary 10mm.
+    - **Unit**: 1 Unit, 1500x2500mm (Large).
+    - **Type**: `Triple` Glazing.
+    - **Glass**: Outer (Tempered), Inner (Tempered), Coating (Solar Control).
+    - **Build-up**: 8mm Pane -> 16mm Cavity -> 6mm Pane -> 16mm Cavity -> 8mm Pane.
+3.  **Define Locations**:
+    - **Origin**: `Berlin` (Removal site)
+    - **Processor**: `Paris` (Factory)
+    - **Landfill**: Select Default (50km local).
+4.  **Transport Config**:
+    - The tool will geocode cities and calculate KM.
+    - Select Truck Type (e.g., `DEFRA 2024`).
+5.  **Conditions**:
+    - Set Age (e.g., 30 years).
+    - Define if "Repair" or "Recondition" is needed.
+6.  **Scenario**:
+    - Choose `Component Reuse` (Scenario B) to model the full disassembly process.
+7.  **Visualize**:
+    - Select `a) Visualize this scenario` to generate charts.
 
-## Project Structure
+### Mode 2: Automated Analysis (Batch)
+Best for processing large datasets (e.g., entire building manifest).
 
-```
+1.  Ensure `data/saint_gobain/saint gobain product database.xlsx` is present.
+2.  Run the tool and select **Automated Analysis**.
+3.  Define **Global Parameters** (Processor location, Truck type) once.
+4.  The tool will:
+    - Iterate through every row in the Excel file.
+    - Run **ALL scenarios** for each product.
+    - Generate a master report: `d:\VITRIFY\reports\automated_analysis_report.csv`.
+
+---
+
+## 📊 Outputs
+
+The tool generates artifacts in `d:\VITRIFY\reports\`:
+- **Plots**: `reports/plots/` (Waterfalls, Donut Charts, Breakdowns).
+- **Markdown Logs**: `reports/markdown_breakdowns/` (Detailed text summaries of every calculation step).
+- **Audit Logs**: `reports/audit_logs/` (Traceability of every math operation).
+
+## 📂 Project Structure
+```text
 d:\VITRIFY\
 ├── src\
-│   ├── Recovery_IGU_CO2.py      # Entry point
-│   └── igu_recovery\            # Main Code Package
-│       ├── main.py              # Application Logic
-│       ├── scenarios.py         # 11 Path Logic implementations
-│       ├── models.py            # Data Structures
-│       └── utils\               # Helpers & Math
-├── data\                        # Product Database & Parameters
-├── docs\                        # Methodology Documentation
-├── reports\                     # Generated Outputs (CSV, Plots)
-├── tests\                       # Integration & Unit Tests
-└── README.md
-```
-
-## Testing
-
-To verify the robustness of the installation:
-```bash
-# Run Unit Tests
-python tests/test_batch_robustness.py
-
-# Run Integration Test (End-to-End Batch)
-python tests/test_integration_batch.py
+│   ├── Recovery_IGU_CO2.py      # Main Launcher
+│   └── igu_recovery\            # Core Logic
+│       ├── scenarios.py         # Physics of the 11 paths
+│       ├── calculations.py      # Math & Geometry
+│       └── visualization.py     # Plotting logic
+├── data\                        # Product Databases
+└── reports\                     # Your Results
 ```
 
 ## License
