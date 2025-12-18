@@ -660,11 +660,11 @@ def run_scenario_closed_loop_recycling(
     flat_glass_reprocessing_kgco2 = processes.flat_glass_reprocessing_kgco2_per_kg * flow_step2.mass_kg
     #   ii. New glass required
     ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg - flow_step2.mass_kg
+    new_glass_mass = flow_start.mass_kg - flow_float.mass_kg
     new_glass_kgco2 = new_glass_mass * ef_new_glass
 
     logger.info(
-        f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
+        f"New Glass Required: {flow_float.mass_kg:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
     # h) Assembly IGU
     # Material-based Calculation
@@ -757,7 +757,7 @@ def run_scenario_closed_loop_recycling(
     total += waste_transport_kgco2
     
     by_stage = {
-        "Dismantling/Removal": dismantling_kgco2,
+        "Dismantling (E_site)": dismantling_kgco2,
         "Breaking": breaking_kgco2,
         "Transport A": transport_A_kgco2,
         "Transport A to (Float)": transport_A2_kgco2,

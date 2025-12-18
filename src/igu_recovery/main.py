@@ -255,16 +255,20 @@ def execute_analysis_batch(
                     # Set specific args per scenario
                     res = None
                     if sc_func == run_scenario_system_reuse:
-                        res = run_scenario_system_reuse(processes, transport, group, flow_start, stats, masses, interactive=False, **kwargs)
+                        res = run_scenario_system_reuse(processes, transport, group,
+                                                        flow_start, stats, masses, interactive=False, **kwargs)
                     elif sc_func == run_scenario_component_reuse:
-                        res = run_scenario_component_reuse(processes, transport, group, seal_geometry, flow_start, stats, interactive=False, **kwargs)
+                        res = run_scenario_component_reuse(processes, transport, group, seal_geometry,
+                                                           flow_start, stats, interactive=False, **kwargs)
                     elif sc_func == run_scenario_component_repurpose:
-                        res = run_scenario_component_repurpose(processes, transport, group, flow_start, stats, interactive=False, **kwargs)
+                        res = run_scenario_component_repurpose(processes, transport, group,
+                                                               flow_start, stats, interactive=False, **kwargs)
                     elif sc_func == run_scenario_closed_loop_recycling:
                         # For Closed-loop, we use the recycling destination
                         transport_recycling = TransportModeConfig(**transport.__dict__)
                         transport_recycling.reuse = recycling_dst
-                        res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, flow_start, seal_geometry, flow_start, interactive=False, **kwargs)
+                        res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, seal_geometry,
+                                                                 flow_start, interactive=False, **kwargs)
                     #elif sc_func == run_scenario_open_loop_recycling:
                     #    res = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=False, **kwargs)
                     #elif sc_func == run_scenario_landfill:
