@@ -6,6 +6,13 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# 1. Load Report Save Location
+current_directory =  os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Build the path to reports relative to the current directory
+report_directory = os.path.join(current_directory, 'reports')
+
+
 class CalculationAudit:
     _instance = None
 
@@ -21,7 +28,7 @@ class CalculationAudit:
         
         self.enabled = True
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_dir = r"d:\VITRIFY\reports\audit_logs"
+        self.log_dir = report_directory
         os.makedirs(self.log_dir, exist_ok=True)
         self.log_file = os.path.join(self.log_dir, f"audit_{self.session_id}.txt")
         self.initialized = True

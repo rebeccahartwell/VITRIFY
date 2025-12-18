@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 # VISUALIZER CLASS
 # ============================================================================
 
+# 1. Load Report Save Location
+current_directory =  os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Build the path to reports relative to the current directory
+report_directory = os.path.join(current_directory, 'reports')
+
 class Visualizer:
     def __init__(self, mode: str = "single_run"):
         """
@@ -19,7 +25,7 @@ class Visualizer:
         mode: 'single_run' (for interactive) or 'batch_run' (for automated analysis)
         """
         self.mode = mode
-        self.output_root = r"d:\VITRIFY\reports\plots"
+        self.output_root = report_directory
         self._setup_style()
         self.session_dir = self._create_session_dir()
 

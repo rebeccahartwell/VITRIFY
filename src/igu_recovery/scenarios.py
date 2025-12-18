@@ -5,11 +5,11 @@ from typing import Dict, Tuple
 from .constants import (
     DISASSEMBLY_KGCO2_PER_M2,
     REPURPOSE_LIGHT_KGCO2_PER_M2, REPURPOSE_MEDIUM_KGCO2_PER_M2, REPURPOSE_HEAVY_KGCO2_PER_M2,
-    INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2,
+    INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2, FLOAT_GLASS_REPROCESSING_KGCO2_PER_KG,
     REMANUFACTURING_KGCO2_PER_M2, RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_M2,
     YIELD_REPAIR, YIELD_DISASSEMBLY_REUSE, YIELD_DISASSEMBLY_REPURPOSE,
     SHARE_CULLET_FLOAT, SHARE_CULLET_OPEN_LOOP_GW, SHARE_CULLET_OPEN_LOOP_CONT,
-    EF_MAT_SPACER_ALU, EF_MAT_SPACER_STEEL, EF_MAT_SPACER_SWISS, EF_MAT_SEALANT,
+    EF_MAT_SPACER_ALU, EF_MAT_SPACER_STEEL, EF_MAT_SPACER_SWISS, EF_MAT_SEALANT, EF_MAT_GLASS_VIRGIN,
     PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
 )
 from .models import (
@@ -198,8 +198,7 @@ def run_scenario_system_reuse(
             removed_mass_repair = flow_post_removal.mass_kg - flow_post_repair.mass_kg
             print(f"  > Applied Repair Yield ({YIELD_REPAIR:.1%}): -{removed_mass_repair:.2f} kg sent to Waste.")
             print(f"  > Remaining Mass: {flow_post_repair.mass_kg:.2f} kg (Ready for Reuse)")
-    
-    # c) New recipient location
+
     # c) New recipient location
     if "processor_to_reuse" not in processes.route_configs:
         if interactive:
@@ -359,8 +358,7 @@ def run_scenario_component_reuse(
     assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
     
     logger.info(f"Assembly: Spacer {mass_spacer_needed_kg:.2f}kg, Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
-    
-    # f) Next location
+
     # f) Next location
     if "processor_to_reuse" not in processes.route_configs:
         if interactive:
@@ -491,8 +489,7 @@ def run_scenario_component_repurpose(
     if rep_preset == "heavy": rep_factor = REPURPOSE_HEAVY_KGCO2_PER_M2
     
     repurpose_kgco2 = flow_post_disassembly.area_m2 * rep_factor
-    
-    # f) Next location
+
     # f) Next location
     if "processor_to_reuse" not in processes.route_configs:
         if interactive:
@@ -559,6 +556,7 @@ def run_scenario_closed_loop_recycling(
     processes: ProcessSettings,
     transport: TransportModeConfig,
     group: IGUGroup,
+    seal_geometry: SealGeometry,
     flow_start: FlowState,
     interactive: bool = True,
     send_intact: bool = None
@@ -569,7 +567,6 @@ def run_scenario_closed_loop_recycling(
     logger.info("Running Scenario: Closed-loop Recycling")
     if interactive:
         print_header("Scenario (d): Closed-loop Recycling")
-    
     # a) Intact decision
     if interactive:
         send_intact = prompt_yes_no("Send IGUs intact to processor?", default=True)
@@ -598,7 +595,7 @@ def run_scenario_closed_loop_recycling(
     if not send_intact:
         # Breaking emissions
         breaking_kgco2 = flow_step1.area_m2 * BREAKING_KGCO2_PER_M2
-        
+
     # d) Transport A (Origin -> Processor)
     stillage_mass_A_kg = 0.0
     if send_intact and processes.igus_per_stillage > 0:
@@ -607,7 +604,7 @@ def run_scenario_closed_loop_recycling(
     
     total_mass_A_kg = flow_step2.mass_kg + stillage_mass_A_kg
     transport_A_kgco2 = get_route_emissions(total_mass_A_kg, "origin_to_processor", processes, transport)
-    
+
     # e) Processor fractions
     CULLET_FLOAT_SHARE = SHARE_CULLET_FLOAT
     
@@ -637,8 +634,8 @@ def run_scenario_closed_loop_recycling(
              print(f"  > Float Plant Quality Check (Yield {CULLET_FLOAT_SHARE:.1%}): -{loss:.2f} kg rejected.")
         
         print(f"  > Sending {flow_float.mass_kg:.2f} kg to Float Plant.")
-    
-    # f) Dispatch to float plant
+
+    # NOTE: "processor_to_recycling" should be configured for the float plant / recycling destination
     # f) Dispatch to float plant
     if "processor_to_recycling" not in processes.route_configs:
         if interactive:
@@ -651,18 +648,84 @@ def run_scenario_closed_loop_recycling(
             processes.route_configs["processor_to_recycling"] = configure_route(
                 "Processor -> Recycling", transport.processor, float_plant, interactive=True
             )
-    
-    # NOTE: "processor_to_recycling" should be configured for the float plant / recycling destination
-    # We used "processor_to_reuse" in previous scenarios.
-    # In Closed Loop, this is B-leg.
-    
+
     # Bulk cullet, no stillages
-    # Bulk cullet, no stillages
-    transport_B_kgco2 = get_route_emissions(flow_float.mass_kg, "processor_to_recycling", processes, transport)
+    transport_A2_kgco2 = get_route_emissions(flow_float.mass_kg, "processor_to_recycling", processes, transport)
     if interactive:
          print(f"  > Transporting {flow_float.mass_kg:.2f} kg to Recycling Facility.")
-    
-    total = dismantling_kgco2 + breaking_kgco2 + transport_A_kgco2 + transport_B_kgco2
+
+
+    # g) Glass Reprocessing
+    #   i.Recovered Yield to be reprocessed
+    flat_glass_reprocessing_kgco2 = processes.flat_glass_reprocessing_kgco2_per_kg * flow_step2.mass_kg
+    #   ii. New glass required
+    ef_new_glass = EF_MAT_GLASS_VIRGIN
+    new_glass_mass = flow_start.mass_kg - flow_step2.mass_kg
+    new_glass_kgco2 = new_glass_mass * ef_new_glass
+
+    logger.info(
+        f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
+
+    # h) Assembly IGU
+    # Material-based Calculation
+    # i. Determine Spacer EF
+    ef_spacer = EF_MAT_SPACER_ALU  # Default
+    if group.spacer_material == "aluminium":
+        ef_spacer = EF_MAT_SPACER_ALU
+    elif group.spacer_material == "steel":
+        ef_spacer = EF_MAT_SPACER_STEEL
+    elif group.spacer_material == "warm_edge_composite":
+        ef_spacer = EF_MAT_SPACER_SWISS
+
+    # ii. Determine Sealant EF
+    ef_sealant = EF_MAT_SEALANT
+
+    # iii. Calculate Mass of New Materials needed
+    # We calculate masses for the FULL group, then scale down by the current flow count
+    mat_masses = calculate_material_masses(group, seal_geometry)
+    scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
+
+    mass_spacer_needed_kg = mat_masses["spacer_kg"] * scale_factor
+    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+
+    embodied_new_mat_kgco2 = (mass_spacer_needed_kg * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+
+    # i) Assembly Energy
+    process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
+
+    logger.info(
+        f"Assembly: Spacer {mass_spacer_needed_kg:.2f}kg, Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
+
+    # j) Next location
+    if "processor_to_reuse" not in processes.route_configs:
+        if interactive:
+            print("\\nConfiguration for Site of Second Use path required:")
+            next_location = prompt_location("final installation location for IGUs")
+            transport.reuse = next_location
+            processes.route_configs["processor_to_reuse"] = configure_route(
+                "Processor -> Reuse", transport.processor, transport.reuse, interactive=True
+            )
+
+    # k) Transport B (Processor -> Reuse)
+    stillage_mass_B_kg = 0.0
+    if processes.igus_per_stillage > 0:
+        n_stillages_B = ceil(flow_start.igus / processes.igus_per_stillage)
+        stillage_mass_B_kg = n_stillages_B * processes.stillage_mass_empty_kg
+
+    total_mass_B_kg = flow_start.mass_kg + stillage_mass_B_kg
+    transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
+
+
+
+    # Installation
+    install_kgco2 = flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+
+    total = (dismantling_kgco2 + breaking_kgco2 + transport_A_kgco2 + transport_A2_kgco2 +
+             flat_glass_reprocessing_kgco2 + new_glass_kgco2 +
+             assembly_kgco2 + transport_B_kgco2 + install_kgco2)
+    # + added values from above
+
     
     # Waste Transport
     waste_transport_kgco2 = 0.0
@@ -697,10 +760,15 @@ def run_scenario_closed_loop_recycling(
         "Dismantling/Removal": dismantling_kgco2,
         "Breaking": breaking_kgco2,
         "Transport A": transport_A_kgco2,
-        "Transport B (Float)": transport_B_kgco2,
+        "Transport A to (Float)": transport_A2_kgco2,
+        "Glass Reprocessing": flat_glass_reprocessing_kgco2,
+        "New Glass": new_glass_kgco2,
+        "Assembly": assembly_kgco2,
+        "Transport B": transport_B_kgco2,
+        "Installation": install_kgco2,
         "Landfill Transport (Waste)": waste_transport_kgco2
     }
-    
+
     return ScenarioResult(
         scenario_name="Closed-Loop Recycling",
         total_emissions_kgco2=total,

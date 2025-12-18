@@ -367,8 +367,12 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
     Step 3 (DB): Load from Database, select product, and prompt for quantities.
     """
     print_header("Step 2: IGU System Definition (Database)")
-    db_path = r'd:\VITRIFY\data\saint_gobain\saint gobain product database.xlsx'
-    
+    # Get the current directory where the script is located
+    current_directory =  os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+    # Build the path to the database file relative to the current directory
+    db_path = os.path.join(current_directory, 'data', 'saint_gobain', 'saint gobain product database.xlsx')
+
     if not os.path.exists(db_path):
         logger.error(f"Database file not found at {db_path}")
         raise FileNotFoundError(db_path)
