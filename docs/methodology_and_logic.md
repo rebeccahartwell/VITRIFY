@@ -31,7 +31,7 @@ $$ E_{transport} = Mass_{tonnes} \times (Dist_{truck} \times EF_{truck} + Dist_{
 | Parameter | Value (Default) | Unit | Description |
 | :--- | :--- | :--- | :--- |
 | **Material EFs** | | | |
-| Float Glass (Virgin) | 1.43 | kgCO2e/kg | Baseline production |
+| Float Glass (Virgin) | 1.29 | kgCO2e/kg | Baseline production |
 | Aluminium Spacer | 26.6 | kgCO2e/kg | High embodied carbon |
 | Sealant | 2.5 | kgCO2e/kg | Process sealant |
 | **Process EFs** | | | |

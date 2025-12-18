@@ -43,6 +43,7 @@ The tool models the detailed physics and logistics of:
     .venv\Scripts\activate  # Windows
     # source .venv/bin/activate  # Mac/Linux
     pip install -r requirements.txt
+    pip install matplotlib
     ```
 
 ---
