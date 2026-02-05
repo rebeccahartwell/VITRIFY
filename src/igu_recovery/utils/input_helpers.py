@@ -90,7 +90,6 @@ def try_parse_lat_lon(text: str) -> Optional[Location]:
     except ValueError:
         return None
 
-
 def prompt_location(label: str) -> Location:
     """
     Prompt user for either a free-text address or a 'lat,lon' pair and return a Location.
@@ -108,7 +107,6 @@ def prompt_location(label: str) -> Location:
             logger.info(f"{label} geocoded to {loc.lat:.6f}, {loc.lon:.6f}")
             return loc
         logger.warning("Could not geocode input. Try again with another address or 'lat,lon'.")
-
 
 def prompt_choice(label: str, options: List[str], default: str) -> str:
     """
@@ -145,7 +143,6 @@ def prompt_choice(label: str, options: List[str], default: str) -> str:
                 
         logger.warning(f"Invalid choice '{s}'. Please enter a number 1-{len(options)} or the option name.")
 
-
 def prompt_yes_no(label: str, default: bool) -> bool:
     """
     Prompt user for yes/no answer, returning True/False.
@@ -177,13 +174,12 @@ def prompt_float(label: str, default: float) -> float:
         except ValueError:
             print(f"{C_ERROR}Invalid input. Please enter a number.{C_RESET}")
 
-
 def prompt_igu_source() -> str:
     """
     Step 2: Ask for IGU source (manual vs database).
     """
     print_header("Step 1: IGU Source Selection")
-    source = prompt_choice("Select IGU definition source", ["manual", "database"], default="manual")
+    source = prompt_choice("Select IGU definition source", ["manual", "database"], default="database")
     return source
 
 def prompt_seal_geometry() -> SealGeometry:
@@ -209,6 +205,21 @@ def prompt_seal_geometry() -> SealGeometry:
         secondary_width_mm=seal_s_wd,
     )
 
+def laminated_glass_input(value, laminated_glass=0, PVB=0):
+    if value is None:
+        return laminated_glass, PVB
+    try:
+        s = str(value)
+        if "." not in s:
+            # No decimal: sum digits of whole number, after_digit = default
+            return sum(int(d) for d in s if d.isdigit()), PVB
+        before, after = s.split(".", 1)
+        glass_thickness = sum(int(d) for d in before if d.isdigit())
+        PVB_thickness = float(after[0]) * 0.38 if after and after[0].isdigit() else PVB
+        return glass_thickness, PVB_thickness
+
+    except (TypeError, ValueError):
+        return laminated_glass, PVB
 
 def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     """
@@ -216,9 +227,7 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     Prompts user for all IGU parameters and constructs the IGUGroup and SealGeometry.
     """
     print_header("Step 2: IGU System Definition (Manual)")
-    
-    seal_geometry = prompt_seal_geometry()
-
+    # ! IGU Batch Description
     print(f"\n{C_HEADER}Now describe the IGU batch geometry{C_RESET}")
     total_igus_str = input(style_prompt("Total number of IGUs in this batch: ")).strip()
     width_str = input(style_prompt("Width of each IGU in mm (unit_width_mm): ")).strip()
@@ -232,6 +241,7 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         logger.error("Invalid numeric input for IGU count or dimensions.")
         raise SystemExit(1)
 
+    # ! Product Description
     glazing_type_str = prompt_choice(
         "Glazing type", ["double", "triple", "single"], default="double"
     )
@@ -239,40 +249,77 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         glass_outer_str = prompt_choice(
             "Glass type", ["annealed", "tempered", "laminated"], default="annealed"
         )
-        coating_str = prompt_choice(
+        coating_outer_str = prompt_choice(
             "Coating type",
             ["none", "hard_lowE", "soft_lowE", "solar_control"],
             default="none",
         )
         glass_inner_str = "annealed" # Check models.py if None is allowed, else defaulting to dummy
-    else:
+        glass_centre_str = "annealed" # Check models.py if None is allowed, else defaulting to dummy
+        coating_inner_str = "none"
+        coating_centre_str = "none"
+
+    elif glazing_type_str == "double":
         glass_outer_str = prompt_choice(
             "Outer glass type", ["annealed", "tempered", "laminated"], default="annealed"
         )
-        glass_inner_str = prompt_choice(
-            "Inner glass type", ["annealed", "tempered", "laminated"], default="annealed"
-        )
-        coating_str = prompt_choice(
+
+        coating_outer_str = prompt_choice(
             "Coating type",
             ["none", "hard_lowE", "soft_lowE", "solar_control"],
             default="none",
         )
-    
-    sealant_str = prompt_choice(
-        "Secondary sealant type",
-        ["polysulfide", "polyurethane", "silicone", "combination", "combi"],
-        default="polysulfide",
-    )
-    spacer_str = prompt_choice(
-        "Spacer material",
-        ["aluminium", "steel", "warm_edge_composite"],
-        default="aluminium",
-    )
+        glass_inner_str = prompt_choice(
+            "Inner glass type", ["annealed", "tempered", "laminated"], default="annealed"
+        )
+        coating_inner_str = prompt_choice(
+            "Coating type",
+            ["none", "hard_lowE", "soft_lowE", "solar_control"],
+            default="none",
+        )
+        glass_centre_str = "annealed"  # Check models.py if None is allowed, else defaulting to dummy
+        coating_centre_str = "none"
+    else: #glazing_type = "triple"
+        glass_outer_str = prompt_choice(
+            "Outer glass type", ["annealed", "tempered", "laminated"], default="annealed"
+        )
+        coating_outer_str = prompt_choice(
+            "Coating type",
+            ["none", "hard_lowE", "soft_lowE", "solar_control"],
+            default="none",
+        )
+        glass_centre_str = prompt_choice(
+            "Centre glass type", ["annealed", "tempered", "laminated"], default="annealed"
+        )
+        coating_centre_str = prompt_choice(
+            "Coating type",
+            ["none", "hard_lowE", "soft_lowE", "solar_control"],
+            default="none",
+        )
+        glass_inner_str = prompt_choice(
+            "Inner glass type", ["annealed", "tempered", "laminated"], default="annealed"
+        )
+        coating_inner_str = prompt_choice(
+            "Coating type",
+            ["none", "hard_lowE", "soft_lowE", "solar_control"],
+            default="none",
+        )
 
+
+    # ! Pane Types Description
+    outer_th_str: Optional[str] = None
+    inner_th_str: Optional[str] = None
+    centre_th_str: Optional[str] = None
     if glazing_type_str == "single":
-        pane_th_str = input(style_prompt("Pane thickness (mm): ")).strip()
+        outer_th_str  = input(style_prompt("Pane thickness (mm): ")).strip()
+        inner_th_str = None
+        centre_th_str = None
         try:
-            pane_thickness_single_mm = float(pane_th_str)
+            if glass_outer_str == "laminated":
+                pane_thickness_single_mm = float(laminated_glass_input(outer_th_str)[0])
+                PVB_thickness_mm = laminated_glass_input(outer_th_str)[1]
+            else:
+                pane_thickness_single_mm = float(outer_th_str)
         except ValueError:
             logger.error("Invalid numeric input for pane thickness.")
             raise SystemExit(1)
@@ -280,7 +327,7 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         pane_thickness_outer_mm = pane_thickness_single_mm
         pane_thickness_inner_mm = 0.0
         cavity_thickness_1_mm = 0.0
-        thickness_centre_mm: Optional[float] = None
+        pane_thickness_centre_mm: Optional[float] = None
         cavity_thickness_2_mm: Optional[float] = None
         IGU_depth_mm_val = pane_thickness_single_mm
 
@@ -288,14 +335,26 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         outer_th_str = input(style_prompt("Outer pane thickness (mm): ")).strip()
         cavity1_str = input(style_prompt("Cavity thickness (mm): ")).strip()
         inner_th_str = input(style_prompt("Inner pane thickness (mm): ")).strip()
+        centre_th_str = None
         try:
-            pane_thickness_outer_mm = float(outer_th_str)
+            if glass_outer_str == "laminated":
+                pane_thickness_outer_mm = float(laminated_glass_input(outer_th_str)[0])
+                PVB_thickness_outer_mm = laminated_glass_input(outer_th_str)[1]
+            else:
+                pane_thickness_outer_mm = float(outer_th_str)
+
+            if glass_inner_str == "laminated":
+                pane_thickness_inner_mm = float(laminated_glass_input(inner_th_str)[0])
+                PVB_thickness_inner_mm = laminated_glass_input(inner_th_str)[1]
+            else:
+                pane_thickness_inner_mm = float(inner_th_str)
+
             cavity_thickness_1_mm = float(cavity1_str)
-            pane_thickness_inner_mm = float(inner_th_str)
+
         except ValueError:
             logger.error("Invalid numeric input for pane or cavity thickness.")
             raise SystemExit(1)
-        thickness_centre_mm = None
+        pane_thickness_centre_mm = None
         cavity_thickness_2_mm = None
         IGU_depth_mm_val = (
             pane_thickness_outer_mm + cavity_thickness_1_mm + pane_thickness_inner_mm
@@ -304,27 +363,57 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
     else:  # glazing_type_str == "triple"
         outer_th_str = input(style_prompt("Outer pane thickness (mm): ")).strip()
         cavity1_str = input(style_prompt("First cavity thickness (mm): ")).strip()
-        middle_th_str = input(style_prompt("Centre pane thickness (mm): ")).strip()
+        centre_th_str = input(style_prompt("Centre pane thickness (mm): ")).strip()
         cavity2_str = input(style_prompt("Second cavity thickness (mm): ")).strip()
         inner_th_str = input(style_prompt("Inner pane thickness (mm): ")).strip()
         try:
-            pane_thickness_outer_mm = float(outer_th_str)
+            if glass_outer_str == "laminated":
+                pane_thickness_outer_mm = float(laminated_glass_input(outer_th_str)[0])
+                PVB_thickness_outer_mm = laminated_glass_input(outer_th_str)[1]
+            else:
+                pane_thickness_outer_mm = float(outer_th_str)
+
             cavity_thickness_1_mm = float(cavity1_str)
-            thickness_centre_mm = float(middle_th_str)
+
+            if glass_inner_str == "laminated":
+                pane_thickness_centre_mm = float(laminated_glass_input(centre_th_str)[0])
+                PVB_thickness_centre_mm = laminated_glass_input(centre_th_str)[1]
+            else:
+                pane_thickness_centre_mm = float(centre_th_str)
+
             cavity_thickness_2_mm = float(cavity2_str)
-            pane_thickness_inner_mm = float(inner_th_str)
+            if glass_inner_str == "laminated":
+                pane_thickness_inner_mm = float(laminated_glass_input(inner_th_str)[0])
+                PVB_thickness_inner_mm = laminated_glass_input(inner_th_str)[1]
+            else:
+                pane_thickness_inner_mm = float(inner_th_str)
+
         except ValueError:
             logger.error("Invalid numeric input for pane or cavity thickness.")
             raise SystemExit(1)
         IGU_depth_mm_val = (
             pane_thickness_outer_mm
             + cavity_thickness_1_mm
-            + thickness_centre_mm
+            + pane_thickness_centre_mm
             + cavity_thickness_2_mm
             + pane_thickness_inner_mm
         )
+
+    seal_geometry = prompt_seal_geometry()
+    sealant_str = prompt_choice(
+        "Secondary sealant type",
+        ["polyisobutylene", "polysulfide", "silicone", "PIB/PS"],
+        default="PIB/PS",
+    )
+    spacer_str = prompt_choice(
+        "Spacer material",
+        ["aluminium", "steel", "warm_edge_composite"],
+        default="aluminium",
+    )
+
+
     
-    # Construct a temporary condition object to satisfy IGUGroup init (will be updated later)
+    #  !Construct a temporary condition object to satisfy IGUGroup init (will be updated later)
     temp_condition = IGUCondition(
         visible_edge_seal_condition="not assessed",
         visible_fogging=False,
@@ -340,24 +429,31 @@ def define_igu_system_from_manual() -> Tuple[IGUGroup, SealGeometry]:
         glazing_type=glazing_type_str,  # type: ignore[arg-type]
         glass_type_outer=glass_outer_str,  # type: ignore[arg-type]
         glass_type_inner=glass_inner_str,  # type: ignore[arg-type]
-        coating_type=coating_str,  # type: ignore[arg-type]
+        coating_type_outer=coating_outer_str,
+        coating_type_centre=coating_centre_str,
+        coating_type_inner=coating_inner_str,
         sealant_type_secondary=sealant_str,  # type: ignore[arg-type]
         spacer_material=spacer_str,  # type: ignore[arg-type]
         interlayer_type=None,
         condition=temp_condition,
         thickness_outer_mm=pane_thickness_outer_mm,
+        thickness_outer_str=outer_th_str,
         thickness_inner_mm=pane_thickness_inner_mm,
+        thickness_inner_str=inner_th_str,
         cavity_thickness_mm=cavity_thickness_1_mm,
         IGU_depth_mm=IGU_depth_mm_val,
+        glass_type_centre=glass_centre_str,  # type: ignore[arg-type]
         mass_per_m2_override=None,
-        thickness_centre_mm=thickness_centre_mm,
+        thickness_centre_mm=pane_thickness_centre_mm,
+        thickness_centre_str=centre_th_str,
         cavity_thickness_2_mm=cavity_thickness_2_mm,
         sealant_type_primary=None,
     )
     
     print_header("IGU System Defined")
     print(f"  {C_PROMPT}Quantity:{C_RESET} {group.quantity}, Size: {group.unit_width_mm}x{group.unit_height_mm} mm")
-    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm")
+    print(f"  {C_PROMPT}Type:{C_RESET} {group.glazing_type}, Depth: {group.IGU_depth_mm} mm, Glazing Build-Up = {group.thickness_outer_str} | "
+          f" {group.cavity_thickness_mm} | {group.thickness_centre_str} | {group.cavity_thickness_2_mm} | {group.thickness_inner_str}")
     
     return group, seal_geometry
 
@@ -392,7 +488,8 @@ def define_igu_system_from_database() -> Tuple[IGUGroup, SealGeometry]:
     # Display Options
     options = df['win_name'].tolist()
     print(f"\n{C_HEADER}Available Products:{C_RESET}")
-    selected_name = prompt_choice("Select Product", options, default=options[0])
+    #! Defaults to "2.1_DGU_6_16_6_Bronze".
+    selected_name = prompt_choice("Select Product", options, default=options[4])
     
     # Get Row
     row = df[df['win_name'] == selected_name].iloc[0]
@@ -465,8 +562,8 @@ def parse_db_row_to_group(
         
     # 3. Sealant
     # DB: "Silicone" -> Model expects "silicone"
-    sealant_raw = str(row.get('Sealant', 'polysulfide')).lower()
-    sealant_type = "polysulfide"
+    sealant_raw = str(row.get('Sealant', 'PIB/PS')).lower()
+    sealant_type = "PIB/PS"
     # Basic matching
     if "silicone" in sealant_raw: sealant_type = "silicone"
     elif "polyurethane" in sealant_raw: sealant_type = "polyurethane"
@@ -476,11 +573,13 @@ def parse_db_row_to_group(
     # If anything other than "-" -> "soft_lowE" (assumption for modern coatings) or "solar_control"
     solar = str(row.get('Solar Coating', '-'))
     low_e = str(row.get('Low E Coating', '-'))
-    coating_type = "none"
+    coating_outer_str = "none"
+    coating_inner_str = "none"
+    coating_centre_str = "none"
     if solar != '-' and len(solar) > 2:
-        coating_type = "solar_control"
+        coating_outer_str = "solar_control"
     elif low_e != '-' and len(low_e) > 2:
-        coating_type = "soft_lowE" # or hard_lowE, hard to tell from name alone without lookup
+        coating_inner_str = "soft_lowE" # or hard_lowE, hard to tell from name alone without lookup
         
     # 5. Parse Unit thicknesses
     # "DGU 6 | 16 | 6 mm"
@@ -489,33 +588,71 @@ def parse_db_row_to_group(
     # Remove chars
     cleaned = re.sub(r'[A-Za-z]', '', unit_str).strip()
     parts = [p.strip() for p in cleaned.split('|') if p.strip()]
-    
     # Defaults
-    t_outer = 6.0
-    t_inner = 6.0
-    t_mid = None
+    pane_thickness_outer_mm = 6.0
+    outer_th_str = "6"
+    pane_thickness_inner_mm = 6.0
+    inner_th_str = "6"
+    pane_thickness_centre_mm = None
+    centre_th_str = None
     c1 = 16.0
-    c2 = None
-    
+    c2 = 0
+
+    # ! Determine glass type and correct thickness (for lamination):
     try:
-        if glazing_type == "double" and len(parts) >= 3:
-             t_outer = float(parts[0])
-             c1 = float(parts[1])
-             t_inner = float(parts[2])
-        elif glazing_type == "triple" and len(parts) >= 5:
-             t_outer = float(parts[0])
-             c1 = float(parts[1])
-             t_mid = float(parts[2])
-             c2 = float(parts[3])
-             t_inner = float(parts[4])
+        if glazing_type == "double" and len(parts) == 3: #i.e double-glazing
+            c1 = float(parts[1])
+            outer_th_str = parts[0]
+            inner_th_str = parts[2]
+            if "." in parts[0]:
+                t, pvb = laminated_glass_input(parts[0])
+                pane_thickness_outer_mm = float(t)
+                PVB_thickness_outer_mm = float(pvb)
+            if "." in parts[2]:
+                t, pvb = laminated_glass_input(parts[2])
+                pane_thickness_inner_mm = float(t)
+                PVB_thickness_inner_mm = float(pvb)
+            g_type_outer = "laminated" if "." in parts[0] else "annealed"
+            g_type_centre = "annealed" #NB, not called - used as dummy
+            g_type_inner = "laminated" if "." in parts[2] else "annealed"
+        elif glazing_type == "triple" and len(parts) == 5: #i.e triple-glazing
+            c1 = float(parts[1])
+            c2 = float(parts[3])
+            outer_th_str = parts[0]
+            centre_th_str = parts[2]
+            inner_th_str = parts[4]
+            if "." in parts[0]:
+                t, pvb = laminated_glass_input(parts[0])
+                pane_thickness_outer_mm = float(t)
+                PVB_thickness_outer_mm = float(pvb)
+            else:
+                pane_thickness_outer_mm = float(outer_th_str)
+
+            if "." in parts[2]:
+                t, pvb = laminated_glass_input(parts[2])
+                pane_thickness_centre_mm = float(t)
+                PVB_thickness_centre_mm = float(pvb)
+            else:
+                pane_thickness_centre_mm = float(centre_th_str)
+
+            if "." in parts[4]:
+                t, pvb = laminated_glass_input(parts[4])
+                pane_thickness_inner_mm = float(t)
+                PVB_thickness_inner_mm = float(pvb)
+            else:
+                pane_thickness_inner_mm = float(inner_th_str)
+            g_type_outer = "laminated" if "." in parts[0] else "annealed"
+            g_type_centre = "laminated" if "." in parts[2] else "annealed"
+            g_type_inner = "laminated" if "." in parts[4] else "annealed"
     except ValueError:
         logger.warning(f"Could not parse geometry from '{unit_str}'. Using defaults.")
     
     # Calculation of Depth
-    depth = t_outer + c1 + t_inner
-    if t_mid and c2:
-        depth += t_mid + c2
-    if glazing_type == "single": depth = t_outer
+    depth = pane_thickness_outer_mm + c1 + pane_thickness_inner_mm
+    if glazing_type == "triple":
+        depth += pane_thickness_centre_mm + c2
+    elif glazing_type == "single":
+        depth = pane_thickness_outer_mm
 
     # Temp condition
     temp_condition = IGUCondition(
@@ -526,60 +663,32 @@ def parse_db_row_to_group(
         reuse_allowed=True
     )
 
-    # Detect Lamination
-    # Check name and unit for "44.2", "stadip", "lami", "silence" etc.
-    win_name = str(row.get('win_name', '')).lower()
-    unit_name = str(row.get('Unit', '')).lower()
-    
-    is_laminated = False
-    is_laminated = False
-    
-    # Load indicators from config or default
-    indicators = []
-    config_path = r"d:\VITRIFY\src\igu_recovery\config\laminated_indicators.txt"
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, 'r') as f:
-                indicators = [line.strip().lower() for line in f if line.strip()]
-        except Exception:
-            pass
-            
-    if not indicators:
-        indicators = ["lami", "stadip", "silence", "44.", "33.", "55.", "66."]
 
-    if any(i in win_name for i in indicators) or any(i in unit_name for i in indicators):
-        is_laminated = True
-        
-    g_type_outer = "laminated" if is_laminated else "annealed"
-    
-    # Check Inner_Lam
-    inner_val = str(row.get('Inner_Lam', '')).lower()
-    is_inner_lam = False
-    if inner_val in ('yes', 'y', 'true', '1') or any(i in inner_val for i in indicators):
-        is_inner_lam = True
-        
-    g_type_inner = "laminated" if is_inner_lam else "annealed"
-    # Inner might be annealed, but for closed-loop logic, one laminated pane triggers penalty.
-    
     group = IGUGroup(
         quantity=quantity,
         unit_width_mm=width_mm,
         unit_height_mm=height_mm,
         glazing_type=glazing_type, # type: ignore
-        glass_type_outer=g_type_outer, 
+        glass_type_outer=g_type_outer,
         glass_type_inner=g_type_inner,
-        coating_type=coating_type, # type: ignore
+        coating_type_outer=coating_outer_str,
+        coating_type_centre=coating_centre_str,
+        coating_type_inner=coating_inner_str,
         sealant_type_secondary=sealant_type, # type: ignore
         spacer_material=spacer_material, # type: ignore
         interlayer_type=None,
         condition=temp_condition,
-        thickness_outer_mm=t_outer,
-        thickness_inner_mm=t_inner,
-        thickness_centre_mm=t_mid,
+        thickness_outer_mm=pane_thickness_outer_mm,
+        thickness_outer_str=outer_th_str,
+        thickness_inner_mm=pane_thickness_inner_mm,
+        thickness_inner_str=inner_th_str,
         cavity_thickness_mm=c1,
         cavity_thickness_2_mm=c2,
         IGU_depth_mm=depth,
+        glass_type_centre=g_type_centre,
         mass_per_m2_override=None,
+        thickness_centre_mm=pane_thickness_centre_mm,
+        thickness_centre_str=centre_th_str,
         sealant_type_primary=None
     )
     
@@ -766,28 +875,26 @@ def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         "Product Group": "Product ID",
         # "Product Name": "Product Name", # Stays
         # "Scenario": "Scenario", # Stays
-        # "Total Emissions (kgCO2e)": "Total Emissions (kgCO2e)", # Stays
-        "Final Yield (%)": "Yield (%)",
+        # "Total Emissions (kgCO2e/batch)": "Total Emissions (kgCO2e/batch)", # Stays
+        #"Final Yield (%)": "Final Yield (%))", # Stays
         "Final Mass (kg)": "Recovered Mass (kg)",
-        "Intensity (kgCO2e/m2 output)": "Intensity (kgCO2e/m²)",
+        #Total Emission Intensity (kgCO2e/m2): Total Emission Intensity (kgCO2e/m2), #Stays"
         
         # Stages
-        "Emissions_Dismantling/Removal": "[Stage] Removal",
+        "Emissions_Building Site Dismantling": "[Stage] Building Site Dismantling",
         "Emissions_Transport A": "[Stage] Transport: Site->Processor",
-        "Emissions_Breaking": "[Stage] Pre-Processing (Breaking)",
-        "Emissions_Dismantling": "[Stage] Dismantling",
-        "Emissions_Disassembly": "[Stage] Disassembly",
-        "Emissions_Repurposing": "[Stage] Repurposing",
-        "Emissions_Recondition": "[Stage] Reconditioning",
+        "Emissions_System Disassembly": "[Stage] System Disassembly",
+        "Emissions_Repurpose": "[Stage] Repurpose",
+        "Emissions_Recondition": "[Stage] Recondition",
         "Emissions_Repair": "[Stage] Repair",
-        "Emissions_Assembly": "[Stage] IGU Assembly",
-        "Emissions_Transport B": "[Stage] Transport: Processor->Reuse",
-        "Emissions_Transport B (Float)": "[Stage] Transport: Processor->Float",
-        "Emissions_Installation": "[Stage] Installation",
+        "Emissions_Glass Reprocessing": "[Stage] Glass Reprocessing",
+        "Emissions_New Glass": "[Stage] New Glass",
+        "Emissions_Re-Assembly": "[Stage] IGU Re-Assembly",
+        "Emissions_Transport B": "[Stage] Transport: Processor->Next Use",
+        "Emissions_Installation": "[Stage] Next Use Installation",
         "Emissions_Packaging": "[Stage] Packaging",
-        "Emissions_Landfill Transport": "[Stage] Transport: Disposal",
-        "Emissions_Landfill Transport (Waste)": "[Stage] Transport: Disposal",
-        "Emissions_Open-Loop Transport": "[Stage] Transport: Open-Loop"
+        "Emissions_Landfill Transport (Waste)": "[Stage] Transport: Landfill Disposal",
+        "Emissions_Open-Loop Transport": "[Stage] Transport: Processor->Open-Loop Facility"
     }
     
     df.rename(columns=rename_map, inplace=True)
@@ -798,24 +905,23 @@ def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         "Product ID", "Product Name", "Scenario",
         
         # Key KPIs
-        "Total Emissions (kgCO2e)", "Yield (%)", "Intensity (kgCO2e/m²)", "Recovered Mass (kg)",
+        "Total Emissions (kgCO2e/batch)", "Total Emission Intensity (kgCO2e/m2)", "Final Yield (%)", "Recovered Mass (kg)",
         
         # Stages (Chronological Flow)
-        "[Stage] Removal",
+        "[Stage] Building Site Dismantling",
         "[Stage] Transport: Site->Processor",
-        "[Stage] Pre-Processing (Breaking)",
-        "[Stage] Dismantling",
-        "[Stage] Disassembly",
-        "[Stage] Repurposing",
-        "[Stage] Reconditioning",
+        "[Stage] System Disassembly",
         "[Stage] Repair",
-        "[Stage] IGU Assembly",
+        "[Stage] Recondition",
+        "[Stage] Repurpose",
+        "[Stage] Glass Reprocessing",
+        "[Stage] New Glass",
+        "[Stage] IGU Re-Assembly",
         "[Stage] Packaging",
-        "[Stage] Transport: Processor->Reuse",
-        "[Stage] Transport: Processor->Float",
-        "[Stage] Transport: Open-Loop",
-        "[Stage] Transport: Disposal",
-        "[Stage] Installation",
+        "[Stage] Transport: Processor->Next Use",
+        "[Stage] Next Use Installation",
+        "[Stage] Transport: Processor->Open-Loop Facility",
+        "[Stage] Transport: Landfill Disposal",
         
         # Metadata
         "Origin", "Processor", "Route A Mode", "Route A Dist (km)"

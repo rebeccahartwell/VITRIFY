@@ -27,10 +27,11 @@ from .utils.calculations import (
 from .scenarios import (
     run_scenario_system_reuse,
     run_scenario_component_reuse,
-    run_scenario_component_repurpose,
+    run_scenario_remanufacture,
+    run_scenario_repurpose,
     run_scenario_closed_loop_recycling,
     run_scenario_open_loop_recycling,
-    run_scenario_landfill
+    run_scenario_landfill,
 )
 from .logging_conf import setup_logging
 from .visualization import Visualizer
@@ -39,8 +40,7 @@ from .models import IGUCondition
 
 logger = logging.getLogger(__name__)
 
-
-
+# Function for running automated analysis for user-defined batch
 def run_automated_analysis(processes: ProcessSettings):
     """
     Automated loop through all products in database and all scenarios.
@@ -89,36 +89,40 @@ def run_automated_analysis(processes: ProcessSettings):
         "Origin -> Processor", origin, processor, interactive=False
     )
 
-    # Route B (Processor -> Reuse) - Need reusedst first
+    # Route B (Processor -> Reuse) - Need reused first
     # Global Reuse Destination (for Reuse paths)
-    reuse_dst = prompt_location("Global Reuse Destination (for Reuse/Repurpose)")
+    reuse_dst = prompt_location("Global Destination (for site of second use for float glass (reuse/remanufacture/repurpose/closed-loop recycling)")
     transport.reuse = reuse_dst
 
     processes.route_configs["processor_to_reuse"] = configure_route(
         "Processor -> Reuse", processor, reuse_dst, interactive=False
     )
 
-    # Global Recycling Destination (for Closed-loop path)
-    recycling_dst = prompt_location("Global Recycling Destination (for Closed-loop)")
+    # Global Recycling Destination (for Open-loop GW path)
+    recycling_dst_GW = prompt_location("Glass Wool Recycling Facility Destination (for Open-Loop)")
 
-    processes.route_configs["processor_to_recycling"] = configure_route(
-        "Processor -> Recycling", processor, recycling_dst, interactive=False
+    processes.route_configs["processor_to_open_loop_GW"] = configure_route(
+        "Processor -> Glass Wool Recycling Facility", processor, recycling_dst_GW, interactive=True
     )
+
+    # Global Recycling Destination (for Open-loop CG path)
+    recycling_dst_CG = prompt_location("Container Glass Recycling Facility Destination (for Open-Loop)")
+    processes.route_configs["processor_to_open_loop_CG"] = configure_route(
+        "Processor -> Container Glass Recycling Facility", processor, recycling_dst_CG, interactive=False
+    )
+
 
     # Global Landfill Location (for waste/yield losses)
-    landfill_dst = prompt_location("Global Landfill Location (for waste/yield losses)")
-    transport.landfill = landfill_dst
+    #landfill_dst = prompt_location("Global Landfill Location (for waste/yield losses)")
+    #transport.landfill = landfill_dst
+
 
     # Waste Routes
-    processes.route_configs["origin_to_landfill"] = configure_route(
-        "Origin -> Landfill", origin, landfill_dst, interactive=False
-    )
-    processes.route_configs["processor_to_landfill"] = configure_route(
-        "Processor -> Landfill", processor, landfill_dst, interactive=False
-    )
+    processes.route_configs["origin_to_landfill"] = RouteConfig(mode="HGV lorry", truck_km=50.0, ferry_km=0.0)
+    processes.route_configs["processor_to_landfill"] = RouteConfig(mode="HGV lorry", truck_km=50.0, ferry_km=0.0)
 
     # Truck Preset
-    print("\nSelect HGV lorry emission factor preset:")
+    print("Select HGV lorry emission factor preset:")
     truck_preset = prompt_choice("HGV lorry emission preset", ["defra_2024", "legacy_rigid", "best_diesel", "ze_truck"], default="defra_2024")
 
     if truck_preset == "defra_2024": transport.emissionfactor_truck = 0.098
@@ -163,6 +167,7 @@ def run_automated_analysis(processes: ProcessSettings):
         reuse_allowed=cond_reuse
     )
 
+
     # 3. Execution Loop
     execute_analysis_batch(
         df=df,
@@ -173,7 +178,8 @@ def run_automated_analysis(processes: ProcessSettings):
         unit_height_mm=unit_height_mm,
         seal_geometry=seal_geometry,
         global_condition=global_condition,
-        recycling_dst=recycling_dst
+        recycling_dst_CG=recycling_dst_CG,
+        recycling_dst_GW=recycling_dst_GW,
     )
 # 1. Load Report Save Location
 current_directory =  os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -190,9 +196,14 @@ def execute_analysis_batch(
     unit_height_mm: float,
     seal_geometry: SealGeometry,
     global_condition: IGUCondition,
-    recycling_dst: Location,
+    recycling_dst_GW: Location,
+    recycling_dst_CG: Location,
     reports_dir: str = report_directory
 ):
+    # To evaluate for the new glass required to fulfill yield losses etc.
+    equivalent_product = prompt_yes_no(
+        "Would you like to evaluate with consideration of the equivalent original batch?", default=False)
+
     scenarios = [
         # System Reuse Variants
         ("System Reuse (Direct)", run_scenario_system_reuse, {"repair_needed": False}),
@@ -201,10 +212,13 @@ def execute_analysis_batch(
         # Component Reuse
         ("Component Reuse", run_scenario_component_reuse, {}),
 
+        # Remanufacture
+        ("Remanufacture", run_scenario_remanufacture, {}),
+
         # Component Repurpose Variants
-        ("Repurpose (Light)", run_scenario_component_repurpose, {"repurpose_intensity": "light"}),
-        ("Repurpose (Medium)", run_scenario_component_repurpose, {"repurpose_intensity": "medium"}),
-        ("Repurpose (Heavy)", run_scenario_component_repurpose, {"repurpose_intensity": "heavy"}),
+        ("Repurpose (Light)", run_scenario_repurpose, {"repurpose_intensity": "light"}),
+        ("Repurpose (Medium)", run_scenario_repurpose, {"repurpose_intensity": "medium"}),
+        ("Repurpose (Heavy)", run_scenario_repurpose, {"repurpose_intensity": "heavy"}),
 
         # Closed-loop Recycling
         ("Closed-loop (Intact)", run_scenario_closed_loop_recycling, {"send_intact": True}),
@@ -215,7 +229,7 @@ def execute_analysis_batch(
         ("Open-loop (Broken)", run_scenario_open_loop_recycling, {"send_intact": False}),
 
         # Landfill
-        ("Straight to Landfill", run_scenario_landfill, {})
+        ("Landfill", run_scenario_landfill, {})
     ]
 
     # Setup Reports Dir
@@ -231,7 +245,7 @@ def execute_analysis_batch(
             group_id = row.get('Group/ID', 'N/A')
             print(f"Processing ({idx+1}/{len(df)}): {product_name}...")
 
-            # Product Results
+            # Set up Product Results
             product_results = []
 
             # Create Group
@@ -242,7 +256,7 @@ def execute_analysis_batch(
             stats = aggregate_igu_groups([group], processes)
             masses = compute_igu_mass_totals([group], stats, seal=seal_geometry)
 
-            # Init Flow
+            # Initial Flow of Materials Available for Recovery
             flow_start = FlowState(
                 igus=float(group.quantity),
                 area_m2=stats["total_IGU_surface_area_m2"],
@@ -255,45 +269,51 @@ def execute_analysis_batch(
                     # Set specific args per scenario
                     res = None
                     if sc_func == run_scenario_system_reuse:
-                        res = run_scenario_system_reuse(processes, transport, group,
-                                                        flow_start, stats, masses, interactive=False, **kwargs)
+                        res = run_scenario_system_reuse(processes, transport, group, seal_geometry,
+                                                        flow_start, stats, masses, interactive=False, equivalent_product = equivalent_product, **kwargs)
                     elif sc_func == run_scenario_component_reuse:
                         res = run_scenario_component_reuse(processes, transport, group, seal_geometry,
-                                                           flow_start, stats, interactive=False, **kwargs)
-                    elif sc_func == run_scenario_component_repurpose:
-                        res = run_scenario_component_repurpose(processes, transport, group,
-                                                               flow_start, stats, interactive=False, **kwargs)
+                                                           flow_start, stats, interactive=False, equivalent_product = equivalent_product, **kwargs)
+                    elif sc_func == run_scenario_remanufacture:
+                        res = run_scenario_remanufacture(processes, transport, group, seal_geometry,
+                                                            flow_start, stats, interactive=False, equivalent_product = equivalent_product, **kwargs)
+                    elif sc_func == run_scenario_repurpose:
+                        res = run_scenario_repurpose(processes, transport, group, seal_geometry,
+                                                               flow_start, stats, interactive=False, equivalent_product = equivalent_product, **kwargs)
                     elif sc_func == run_scenario_closed_loop_recycling:
-                        # For Closed-loop, we use the recycling destination
-                        transport_recycling = TransportModeConfig(**transport.__dict__)
-                        transport_recycling.reuse = recycling_dst
-                        res = run_scenario_closed_loop_recycling(processes, transport_recycling, group, seal_geometry,
-                                                                 flow_start, interactive=False, **kwargs)
-                    #elif sc_func == run_scenario_open_loop_recycling:
-                    #    res = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=False, **kwargs)
-                    #elif sc_func == run_scenario_landfill:
-                    #    res = run_scenario_landfill(processes, transport, group, flow_start, interactive=False, **kwargs)
+                        res = run_scenario_closed_loop_recycling(processes, transport, group, seal_geometry,
+                                                                 flow_start, interactive=False, equivalent_product = equivalent_product, **kwargs)
+
+                    elif sc_func == run_scenario_open_loop_recycling:
+                        res = run_scenario_open_loop_recycling(processes, transport, group, seal_geometry,
+                                                               flow_start, interactive=False, equivalent_product = equivalent_product, **kwargs)
+
+                    elif sc_func == run_scenario_landfill:
+                        res = run_scenario_landfill(processes, transport, group, seal_geometry,
+                                                                flow_start, interactive=False, equivalent_product = equivalent_product, **kwargs)
 
                     if res:
                         entry = {
                             "Product Group": group_id,
                             "Product Name": product_name,
                             "Scenario": sc_name,
-                            "Total Emissions (kgCO2e)": res.total_emissions_kgco2,
+                            "Total Emissions (kgCO2e/batch)": round(res.total_emissions_kgco2,1),
                             "Final Yield (%)": res.yield_percent,
                             "Final Mass (kg)": res.final_mass_kg,
-                            "Intensity (kgCO2e/m2 output)": (res.total_emissions_kgco2 / res.final_area_m2) if res.final_area_m2 > 0 else 0,
+                            "Total Emission Intensity (kgCO2e/m2)": (res.total_emissions_kgco2 / res.final_area_m2) if res.final_area_m2 > 0 else 0,
                             # Route Metadata
                             "Origin": f"{transport.origin.lat},{transport.origin.lon}",
                             "Processor": f"{transport.processor.lat},{transport.processor.lon}",
                             "Route A Mode": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).mode,
-                            "Route A Dist (km)": processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).truck_km + processes.route_configs.get("origin_to_processor", RouteConfig(mode="N/A")).ferry_km,
+                            "Route A Dist (km)": processes.route_configs.get("origin_to_processor",
+                                                                             RouteConfig(mode="N/A")).truck_km + processes.route_configs.get("origin_to_processor",
+                                                                                                                                             RouteConfig(mode="N/A")).ferry_km,
                         }
 
                         # Explode by_stage dictionary into columns
                         if res.by_stage:
                             for stage, val in res.by_stage.items():
-                                entry[f"Emissions_{stage}"] = val
+                                entry[f"Emissions_{stage}"] = round(val,1)
 
                         results.append(entry)
                         product_results.append(entry)
@@ -309,6 +329,7 @@ def execute_analysis_batch(
         print("No results to save.")
         return
 
+    # DataFrame of Results
     report_df = pd.DataFrame(results)
 
     # --- PHASE 4: REPORT REFINEMENT (Option A) ---
@@ -316,7 +337,7 @@ def execute_analysis_batch(
 
     if not report_df.empty:
         # Show breakdown of mean total emissions by scenario
-        print(report_df.groupby("Scenario")[["Total Emissions (kgCO2e)", "Yield (%)"]].mean())
+        print(report_df.groupby("Scenario")[["Total Emissions (kgCO2e/batch)", "Final Yield (%)"]].mean())
 
     # --- VISUALIZATION (BATCH) ---
     try:
@@ -338,6 +359,7 @@ def execute_analysis_batch(
         print(f"Report saved to: {out_file}")
 
 
+# This function describes the main script and allows the user to select the option automated_analysis or single_run
 def main():
     # 1. LOGGING SETUP
     setup_logging(console_level=logging.INFO)
@@ -353,11 +375,12 @@ def main():
     # Setup process settings dict
     processes.route_configs = {}
 
+    # --- AUTOMATED ANALYSIS ---
     if mode == "Automated Analysis (Batch)":
         run_automated_analysis(processes)
         return
 
-    # --- SINGLE RUN (Original Logic) ---
+    # --- SINGLE RUN  ---
 
     # 2. IGU SOURCE SELECTION
     source_mode = prompt_igu_source()
@@ -378,11 +401,11 @@ def main():
     transport = TransportModeConfig(origin=origin, processor=processor, reuse=processor)
 
     # Global Landfill
-    print("\\nHow do you want to define Landfill locations?")
+    print("How do you want to define Landfill locations?")
     landfill_mode = prompt_choice(
         "Landfill Mode",
         ["Specific Global Location", "Default Local Landfills (50km from source)"],
-        default="Specific Global Location"
+        default="Default Local Landfills (50km from source)"
     )
 
     landfill_dst = None
@@ -412,14 +435,12 @@ def main():
         "Origin -> Processor", origin, processor, interactive=True
     )
 
-
-
     # Waste Routes
     if use_default_landfill:
         # Manually configure 50km routes
         processes.route_configs["origin_to_landfill"] = RouteConfig(mode="HGV lorry", truck_km=50.0, ferry_km=0.0)
         processes.route_configs["processor_to_landfill"] = RouteConfig(mode="HGV lorry", truck_km=50.0, ferry_km=0.0)
-        print(f"\\n--- Configured Waste Routes (Default 50km) ---")
+        print(f"--- Configured Waste Routes (Default 50km) ---")
         print(f"  Origin -> Landfill: 50.0 km")
         print(f"  Processor -> Landfill: 50.0 km")
     else:
@@ -432,7 +453,7 @@ def main():
         )
 
     # Truck settings
-    logger.info("\nSelect HGV lorry emission factor preset (DEFRA 2024 / Industry benchmarks):")
+    logger.info(" Select HGV lorry emission factor preset (DEFRA 2024 / Industry benchmarks):")
     logger.info("  defra_2024   = 0.098 kgCO2e/tkm (Artic >33t, Avg Laden) [DEFAULT]")
     logger.info("  legacy_rigid = 0.175 kgCO2e/tkm (Rigid >7.5t, Avg Laden)")
     logger.info("  best_diesel  = 0.080 kgCO2e/tkm (Modern efficient fleet)")
@@ -470,15 +491,16 @@ def main():
     print_header("Step 7: Recovery Scenario Selection")
     logger.info("Select one of the following scenarios:")
     logger.info("  a) System Reuse (Dismantle -> Transport -> Repair -> Transport -> Install)")
-    logger.info("  b) Component Reuse (Dismantle -> Disassemble -> Recondition -> Assemble -> Install)")
-    logger.info("  c) Component Repurpose (Dismantle -> Disassemble -> Repurpose -> Install)")
-    logger.info("  d) Closed-loop Recycling (Dismantle -> Float Plant -> New Glass)")
-    logger.info("  e) Open-loop Recycling (Dismantle -> Glasswool/Container)")
-    logger.info("  f) Straight to Landfill (Dismantle -> Landfill)")
+    logger.info("  b) Component Reuse (Dismantle -> Disassemble -> Component Recondition -> Assemble -> Install)")
+    logger.info("  c) Remanufacture (Dismantle -> Disassemble -> Remanufacture -> Install)")
+    logger.info("  d) Component Repurpose (Dismantle -> Disassemble -> Repurpose -> Install)")
+    logger.info("  e) Closed-loop Recycling (Dismantle -> Float Plant -> New Glass)")
+    logger.info("  f) Open-loop Recycling (Dismantle -> Glasswool/Container)")
+    logger.info("  g) Landfill (Dismantle -> Landfill)")
 
     scenario_choice = prompt_choice(
         "Select scenario",
-        ["system_reuse", "component_reuse", "component_repurpose", "closed_loop_recycling", "open_loop_recycling", "landfill"],
+        ["system_reuse", "component_reuse", "remanufacture", "repurpose", "closed_loop_recycling", "open_loop_recycling", "landfill"],
         default="system_reuse"
     )
 
@@ -493,7 +515,7 @@ def main():
     flow_start = FlowState(igus=initial_igus, area_m2=initial_area, mass_kg=initial_mass)
 
     if scenario_choice == "system_reuse":
-        result = run_scenario_system_reuse(processes, transport, group, flow_start, stats, masses, interactive=True)
+        result = run_scenario_system_reuse(processes, transport, group, seal_geometry, flow_start, stats, masses, interactive=True)
         print_scenario_overview(result)
         save_scenario_md(result) # NEW
 
@@ -502,8 +524,13 @@ def main():
         print_scenario_overview(result)
         save_scenario_md(result) # NEW
 
-    elif scenario_choice == "component_repurpose":
-        result = run_scenario_component_repurpose(processes, transport, group, flow_start, stats, interactive=True)
+    elif scenario_choice == "remanufacture":
+        result = run_scenario_remanufacture(processes, transport, group, seal_geometry, flow_start, stats, interactive=True)
+        print_scenario_overview(result)
+        save_scenario_md(result) # NEW
+
+    elif scenario_choice == "repurpose":
+        result = run_scenario_repurpose(processes, transport, group, seal_geometry, flow_start, stats, interactive=True)
         print_scenario_overview(result)
         save_scenario_md(result) # NEW
 
@@ -513,12 +540,12 @@ def main():
         save_scenario_md(result) # NEW
 
     elif scenario_choice == "open_loop_recycling":
-        result = run_scenario_open_loop_recycling(processes, transport, group, flow_start, interactive=True)
+        result = run_scenario_open_loop_recycling(processes, transport, group, seal_geometry, flow_start, interactive=True)
         print_scenario_overview(result)
         save_scenario_md(result) # NEW
 
     elif scenario_choice == "landfill":
-        result = run_scenario_landfill(processes, transport, group, flow_start, interactive=True)
+        result = run_scenario_landfill(processes, transport, group, seal_geometry, flow_start, interactive=True)
         print_scenario_overview(result)
         save_scenario_md(result) # NEW
 
@@ -557,10 +584,23 @@ def main():
              transport.reuse = tgt_reuse
              processes.route_configs["processor_to_reuse"] = configure_route("Processor -> Reuse", transport.processor, tgt_reuse, interactive=True)
 
-        if "processor_to_recycling" not in processes.route_configs:
-             print("\n(Comparison requires Recycling destination)")
-             tgt_recycling = prompt_location("Recycling Destination")
-             processes.route_configs["processor_to_recycling"] = configure_route("Processor -> Recycling", transport.processor, tgt_recycling, interactive=True)
+        # Global Recycling Destination (for Open-loop GW path)
+        if "processor_to_open_loop_GW" not in processes.route_configs:
+            print("(Comparison requires Open-loop GW Recycling Facility destination)")
+            recycling_dst_GW = prompt_location("Glass Wool Recycling Facility Destination (for Open-Loop)")
+            processes.route_configs["processor_to_open_loop_GW"] = configure_route(
+            "Processor -> Glass Wool Recycling Facility", processor, recycling_dst_GW, interactive=True)
+
+        # Global Recycling Destination (for Open-loop CG path)
+        if "processor_to_open_loop_CG" not in processes.route_configs:
+            print("(Comparison requires Open-loop CG Recycling Facility destination)")
+            recycling_dst_CG = prompt_location("Container Glass Recycling Facility Destination (for Open-Loop)")
+            processes.route_configs["processor_to_open_loop_CG"] = configure_route(
+            "Processor -> Container Glass Recycling Facility", processor, recycling_dst_CG, interactive=False)
+
+        # To evaluate for the new glass required to fulfill yield losses etc.
+        equivalent_product = prompt_yes_no(
+            "Would you like to evaluate with consideration of the equivalent original batch?", default=False)
 
         comparison_results = []
 
@@ -568,10 +608,11 @@ def main():
         all_scenarios = [
             ("System Reuse", run_scenario_system_reuse),
             ("Component Reuse", run_scenario_component_reuse),
-            ("Component Repurpose", run_scenario_component_repurpose),
+            ("Remanufacture", run_scenario_remanufacture),
+            ("Repurpose", run_scenario_repurpose),
             ("Closed-loop Recycling", run_scenario_closed_loop_recycling),
             ("Open-loop Recycling", run_scenario_open_loop_recycling),
-            ("Straight to Landfill", run_scenario_landfill)
+            ("Landfill", run_scenario_landfill)
         ]
 
         for sc_name, sc_func in all_scenarios:
@@ -581,7 +622,7 @@ def main():
             # We rely on processes.route_configs being set above.
             # We update t_copy.reuse/recycling logic if strictly needed for context,
             # but emissions drive off route keys.
-            if sc_name == "Straight to Landfill":
+            if sc_name == "Landfill":
                 t_copy.landfill = landfill_dst
 
             # Run
@@ -589,17 +630,19 @@ def main():
                 # Dispatch based on signature
                 res_cmp = None
                 if sc_name == "System Reuse":
-                    res_cmp = run_scenario_system_reuse(processes, t_copy, group, flow_start, stats, masses, interactive=False)
+                    res_cmp = run_scenario_system_reuse(processes, t_copy, group, seal_geometry, flow_start, stats, masses, interactive=False, equivalent_product = equivalent_product)
                 elif sc_name == "Component Reuse":
-                    res_cmp = run_scenario_component_reuse(processes, t_copy, group, seal_geometry, flow_start, stats, interactive=False)
-                elif sc_name == "Component Repurpose":
-                    res_cmp = run_scenario_component_repurpose(processes, t_copy, group, flow_start, stats, interactive=False)
+                    res_cmp = run_scenario_component_reuse(processes, t_copy, group, seal_geometry, flow_start, stats, interactive=False, equivalent_product = equivalent_product)
+                elif sc_name == "Remanufacture":
+                    res_cmp = run_scenario_remanufacture(processes, t_copy, group, seal_geometry, flow_start, stats, interactive=False, equivalent_product = equivalent_product)
+                elif sc_name == "Repurpose":
+                    res_cmp = run_scenario_repurpose(processes, t_copy, group, seal_geometry, flow_start, stats, interactive=False, equivalent_product = equivalent_product)
                 elif sc_name == "Closed-loop Recycling":
-                    res_cmp = run_scenario_closed_loop_recycling(processes, t_copy, group, seal_geometry, flow_start, interactive=False)
+                    res_cmp = run_scenario_closed_loop_recycling(processes, t_copy, group, seal_geometry, flow_start, interactive=False, equivalent_product = equivalent_product)
                 elif sc_name == "Open-loop Recycling":
-                    res_cmp = run_scenario_open_loop_recycling(processes, t_copy, group, flow_start, interactive=False)
-                elif sc_name == "Straight to Landfill":
-                    res_cmp = run_scenario_landfill(processes, t_copy, group, flow_start, interactive=False)
+                    res_cmp = run_scenario_open_loop_recycling(processes, t_copy, group, seal_geometry, flow_start, interactive=False, equivalent_product = equivalent_product)
+                elif sc_name == "Landfill":
+                    res_cmp = run_scenario_landfill(processes, t_copy, group, seal_geometry, flow_start, interactive=False, equivalent_product = equivalent_product)
 
                 if res_cmp:
                     comparison_results.append(res_cmp)

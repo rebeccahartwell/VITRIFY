@@ -50,6 +50,8 @@ class TransportModeConfig:
     travel_ferry_A_km_override: Optional[float] = None
     travel_truck_B_km_override: Optional[float] = None
     travel_ferry_B_km_override: Optional[float] = None
+    open_loop_GW: Optional[Location] = None
+    open_loop_CG: Optional[Location] = None
     landfill: Optional[Location] = None
 
 
@@ -65,8 +67,6 @@ class ProcessSettings:
     """
     breakage_rate_global: float = BREAKAGE_RATE_GLOBAL
     humidity_failure_rate: float = HUMIDITY_FAILURE_RATE
-    split_yield: float = SPLIT_YIELD
-    remanufacturing_yield: float = REMANUFACTURING_YIELD
     split_yield: float = SPLIT_YIELD
     remanufacturing_yield: float = REMANUFACTURING_YIELD
     # route_A_mode / route_B_mode replaced by route_configs registry
@@ -112,7 +112,7 @@ class SealGeometry:
 @dataclass
 class IGUGroup:
     """
-    Describes a homogeneous group of IGUs with identical geometry, build-up and condition.
+    Describes a homogeneous group of IGUs (double or triple) with identical geometry, build-up and condition.
     Note: cavity_thickness_mm (and cavity_thickness_2_mm) are used both for the
     IGU build-up depth and to derive the secondary seal thickness.
     """
@@ -122,17 +122,23 @@ class IGUGroup:
     glazing_type: GlazingType
     glass_type_outer: GlassType
     glass_type_inner: GlassType
-    coating_type: CoatingType
+    coating_type_outer: CoatingType
+    coating_type_centre: CoatingType
+    coating_type_inner: CoatingType
     sealant_type_secondary: SealantType
     spacer_material: SpacerMaterial
     interlayer_type: Optional[str]
     condition: IGUCondition
     thickness_outer_mm: float          # pane thickness (outer)
+    thickness_outer_str: Optional[str]
     thickness_inner_mm: float          # pane thickness (inner)
+    thickness_inner_str: Optional[str]
     cavity_thickness_mm: float         # cavity thickness (first cavity)
     IGU_depth_mm: float                # overall IGU build-up depth
+    glass_type_centre: Optional[GlassType] = None # glass type (centre, triple)
     mass_per_m2_override: Optional[float] = None
     thickness_centre_mm: Optional[float] = None   # pane thickness (centre, triple)
+    thickness_centre_str: Optional[str] = None
     cavity_thickness_2_mm: Optional[float] = None # second cavity thickness (triple)
     sealant_type_primary: Optional[SealantType] = None  # Metadata only
 

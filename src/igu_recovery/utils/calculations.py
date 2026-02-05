@@ -145,8 +145,8 @@ def aggregate_igu_groups(
       - total_IGU_surface_area_m2 : total IGU exposed surface area on the project
       - acceptable_igus           : IGUs acceptable for reuse after visual checks and condition filters
       - acceptable_area_m2        : surface area of acceptable IGUs
-      - remanufactured_igus       : IGUs that can be remanufactured (component route, pane-splitting logic)
-      - remanufactured_area_m2    : corresponding surface area
+      - reclaimed_igus       : IGUs that can be remanufactured (component route, pane-splitting logic)
+      - reclaimed_area_m2    : corresponding surface area
     """
     total_igus = 0
     total_IGU_surface_area_m2 = 0.0
@@ -197,22 +197,22 @@ def aggregate_igu_groups(
     panes_per_igu = total_panes_sum / total_quantity_acceptable if total_quantity_acceptable > 0 else 0.0
 
     total_panes = after_humidity * panes_per_igu * processes.split_yield
-    remanufactured_igus_raw = floor(total_panes / panes_per_igu) if panes_per_igu > 0 else 0.0
-    remanufactured_igus = remanufactured_igus_raw * processes.remanufacturing_yield
+    reclaimed_igus_raw = floor(total_panes / panes_per_igu) if panes_per_igu > 0 else 0.0
+    reclaimed_igus = reclaimed_igus_raw * processes.remanufacturing_yield
 
     average_area_per_igu = (
         total_IGU_surface_area_m2 / total_igus if total_igus > 0 else 0.0
     )
     acceptable_area_m2 = average_area_per_igu * acceptable_igus
-    remanufactured_area_m2 = average_area_per_igu * remanufactured_igus
+    reclaimed_area_m2 = average_area_per_igu * reclaimed_igus
 
     return {
         "total_igus": float(total_igus),
         "total_IGU_surface_area_m2": total_IGU_surface_area_m2,
         "acceptable_igus": float(acceptable_igus),
         "acceptable_area_m2": acceptable_area_m2,
-        "remanufactured_igus": float(remanufactured_igus),
-        "remanufactured_area_m2": remanufactured_area_m2,
+        "reclaimed_igus": float(reclaimed_igus),
+        "reclaimed_area_m2": reclaimed_area_m2,
         "average_area_per_igu": average_area_per_igu,
     }
 
@@ -221,7 +221,8 @@ def packaging_factor_per_igu(processes: ProcessSettings) -> float:
     """
     Compute the stillage manufacturing emission allocation per IGU (kg CO2e/IGU),
     based on stillage lifetime and IGUs per stillage. Returns 0 if stillage emissions
-    are excluded or the parameters are invalid.
+    are excluded or the parameters are invalid. "INCLUDE_STILLAGE_EMBODIED" can be changed
+    in project_parameters workbook.
     """
     if not processes.include_stillage_embodied:
         return 0.0
@@ -257,7 +258,7 @@ def compute_sealant_volumes(group: IGUGroup, seal: SealGeometry) -> Dict[str, fl
     Compute primary and secondary sealant volumes for an IGU group.
     Returns a dict with per-IGU and total volumes (m3).
     """
-    # 1. Dimensions in metres
+    # 1. Perimeter dimensions in metres
     W_m = group.unit_width_mm / 1000.0
     H_m = group.unit_height_mm / 1000.0
     perimeter_m = 2.0 * (W_m + H_m)
@@ -301,7 +302,7 @@ def apply_yield_loss(state: FlowState, loss_fraction: float) -> FlowState:
 
 def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, float]:
     """
-    Calculate total mass (kg) of Glass, Sealant, and Spacer for the group.
+    Calculate total mass (kg) of Glass, Sealant, and Spacer for the FULL group [batch].
     Returns:
         {
             "glass_kg": float,
@@ -331,16 +332,20 @@ def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, 
     vols = compute_sealant_volumes(group, seal)
     # Total volume (primary + secondary) for the whole group
     vol_seal_total_m3 = vols["primary_volume_total_m3"] + vols["secondary_volume_total_m3"]
-    
+
     # Map Sealant Type to Density Factor
-    # Base density is ~1700 kg/m3 (Polysulfide)
+    # Base density is ~1275 kg/m3 (PIB/PS)
     density_factor = 1.0
     stype = group.sealant_type_secondary
-    if stype == "polyurethane":
-        density_factor = 0.85
-    elif stype == "silicone":
-        density_factor = 0.82
-    # polysulfide stays 1.0 (base)
+    if stype == "polyurethane": #1450 kg/m3
+        density_factor = 0.89
+    elif stype == "polyisobutylene": # 925 kg/m3
+        density_factor = 1.38
+    elif stype == "polysulfide": # 1625 kg/m3
+        density_factor = 0.77
+    elif stype == "silicone": # 1250
+        density_factor = 1.02
+    # PIB/PS stays 1.0 (base)
     
     mass_sealant_kg = vol_seal_total_m3 * SEALANT_DENSITY_KG_M3 * density_factor
 
@@ -355,14 +360,13 @@ def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, 
     total_spacer_len_m = perimeter_m * cavities * qty
     
     # Map Spacer Material to Linear Weight
-    # Base (Alu) ~0.04 kg/m? Or constant?
     # SPACER_MASS_PER_M_KG is loaded from constants.
     weight_factor = 1.0
     smat = group.spacer_material
     if smat == "steel":
-        weight_factor = 2.0
+        weight_factor = 2.9
     elif smat == "warm_edge_composite":
-        weight_factor = 0.6
+        weight_factor = 0.7
     # aluminium stays 1.0
     
     mass_spacer_kg = total_spacer_len_m * SPACER_MASS_PER_M_KG * weight_factor
@@ -370,6 +374,7 @@ def calculate_material_masses(group: IGUGroup, seal: SealGeometry) -> Dict[str, 
     return {
         "glass_kg": mass_glass_kg,
         "sealant_kg": mass_sealant_kg,
+        "spacer_length_m": total_spacer_len_m,
         "spacer_kg": mass_spacer_kg
     }
 
@@ -381,7 +386,7 @@ def compute_igu_mass_totals(
     Compute IGU mass totals for the project batch:
       - total_mass_kg / total_mass_t
       - acceptable_mass_kg (mass associated with acceptable_igus)
-      - remanufactured_mass_kg (mass associated with remanufactured_igus)
+      - reclaimed_mass_kg (mass associated with reclaimed_igus)
       - avg_mass_per_igu_kg
       
     If 'seal' is provided, performs detailed calculation summing Glass + Sealant + Spacer.
@@ -420,13 +425,13 @@ def compute_igu_mass_totals(
 
     # Derived masses for fractions
     acceptable_mass_kg = avg_mass_per_igu_kg * stats.get("acceptable_igus", 0.0)
-    remanufactured_mass_kg = avg_mass_per_igu_kg * stats.get("remanufactured_igus", 0.0)
+    reclaimed_mass_kg = avg_mass_per_igu_kg * stats.get("reclaimed_igus", 0.0)
 
     return {
         "total_mass_kg": total_mass_kg,
         "total_mass_t": total_mass_t,
         "acceptable_mass_kg": acceptable_mass_kg,
-        "remanufactured_mass_kg": remanufactured_mass_kg,
+        "reclaimed_mass_kg": reclaimed_mass_kg,
         "avg_mass_per_igu_kg": avg_mass_per_igu_kg,
     }
 

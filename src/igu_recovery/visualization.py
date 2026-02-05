@@ -144,7 +144,7 @@ class Visualizer:
         # 1. Emissions (Bars)
         bars = ax1.bar(names, emissions, color=self.colors['emissions_light'], alpha=0.8, label='Total Emissions', width=0.5)
         
-        ax1.set_ylabel('Total Emissions (kgCO2e)', color=self.colors['emissions_dark'], fontweight='bold')
+        ax1.set_ylabel('Total Emissions (kgCO2e/batch)', color=self.colors['emissions_dark'], fontweight='bold')
         ax1.tick_params(axis='y', labelcolor=self.colors['emissions_dark'])
         ax1.grid(True, axis='y', linestyle=':', alpha=0.6)
         ax1.set_ylim(0, max(emissions)*1.15) # Room for labels
@@ -162,7 +162,7 @@ class Visualizer:
         ax2.plot(names, yields, color=self.colors['yield_dark'], marker='o', linewidth=3, markersize=10, 
                  markerfacecolor='white', markeredgewidth=2, label='Final Yield')
         
-        ax2.set_ylabel('Yield (%)', color=self.colors['yield_dark'], fontweight='bold')
+        ax2.set_ylabel('Final Yield (%)', color=self.colors['yield_dark'], fontweight='bold')
         ax2.tick_params(axis='y', labelcolor=self.colors['yield_dark'])
         ax2.set_ylim(0, 115)
         ax2.spines['right'].set_visible(False) # Clean look
@@ -198,7 +198,7 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
         
         try:
-            pivot = df.pivot_table(index='Product Name', columns='Scenario', values='Total Emissions (kgCO2e)')
+            pivot = df.pivot_table(index='Product Name', columns='Scenario', values='Total Emissions (kgCO2e/batch)')
             sorted_cols = pivot.median().sort_values().index
             pivot = pivot[sorted_cols]
             
@@ -227,10 +227,10 @@ class Visualizer:
         # Get sorted scenarios
         scenarios = df['Scenario'].unique()
         # sort by median
-        medians = df.groupby('Scenario')['Total Emissions (kgCO2e)'].median().sort_values()
+        medians = df.groupby('Scenario')['Total Emissions (kgCO2e/batch)'].median().sort_values()
         
         for sc in medians.index:
-            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e)'].dropna().values
+            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e/batch)'].dropna().values
             data_to_plot.append(data)
             labels.append(sc)
             
@@ -252,7 +252,7 @@ class Visualizer:
             median.set_color(self.colors['emissions_dark'])
             median.set_linewidth(2)
 
-        ax.set_ylabel("Total Emissions (kgCO2e)", fontweight='bold')
+        ax.set_ylabel("Total Emissions (kgCO2e/batch)", fontweight='bold')
         ax.set_title("Emissions Distribution by Scenario", loc='left', pad=15)
         plt.xticks(rotation=45, ha='right')
         ax.grid(True, axis='y', linestyle=':', alpha=0.5)
@@ -279,11 +279,11 @@ class Visualizer:
         for i, sc in enumerate(scenarios):
             subset = df[df['Scenario'] == sc]
             # Big bubbles with transparency
-            ax.scatter(subset['Yield (%)'], subset['Total Emissions (kgCO2e)'], 
+            ax.scatter(subset['Final Yield (%)'], subset['Total Emissions (kgCO2e/batch)'],
                        label=sc, alpha=0.6, edgecolors='white', linewidth=1.5, s=150, color=cmap(i))
             
         ax.set_xlabel("Material Yield (%)", fontweight='bold')
-        ax.set_ylabel("Total Emissions (kgCO2e)", fontweight='bold')
+        ax.set_ylabel("Total Emissions (kgCO2e/batch)", fontweight='bold')
         ax.set_title("Eco-Efficiency Frontier: Yield vs Carbon", loc='left', pad=15)
         
         # Grid
@@ -298,12 +298,14 @@ class Visualizer:
         plt.close(fig)
         print(f"   [Plot] Saved batch scatter to: {filepath}")
 
+
+
     def _plot_batch_intensity(self, df: pd.DataFrame):
         """Bar chart of average Intensity (kgCO2e/m2 output) where yield > 0."""
-        subset = df[df['Yield (%)'] > 1.0]
+        subset = df[df['Final Yield (%)'] > 1.0]
         if subset.empty: return
 
-        grouped = subset.groupby('Scenario')['Intensity (kgCO2e/m²)'].mean().sort_values()
+        grouped = subset.groupby('Scenario')['Total Emission Intensity (kgCO2e/m2)'].mean().sort_values()
         if grouped.empty: return
 
         fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
@@ -376,7 +378,7 @@ class Visualizer:
     def plot_stacked_bar_stages(self, results: List[ScenarioResult], product_name: str = ""):
         """Stacked bar chart: Emission breakdown by stage per scenario."""
         if not results: return
-        
+
         # Collect all unique stages
         all_stages = set()
         for r in results:
@@ -463,12 +465,12 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(14, 8), dpi=150)
         
         scenarios = df['Scenario'].unique()
-        medians = df.groupby('Scenario')['Total Emissions (kgCO2e)'].median().sort_values()
+        medians = df.groupby('Scenario')['Total Emissions (kgCO2e/batch)'].median().sort_values()
         
         data_to_plot = []
         labels = []
         for sc in medians.index:
-            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e)'].dropna().values
+            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e/batch)'].dropna().values
             data_to_plot.append(data)
             labels.append(sc)
         
@@ -498,7 +500,7 @@ class Visualizer:
         plt.close(fig)
         print(f"   [Plot] Saved boxplot to: {filepath}")
 
-    def plot_heatmap(self, df: pd.DataFrame, value_col: str = 'Total Emissions (kgCO2e)'):
+    def plot_heatmap(self, df: pd.DataFrame, value_col: str = 'Total Emissions (kgCO2e/batch)'):
         """Heatmap: Product × Scenario matrix."""
         if df.empty: return
         
@@ -541,12 +543,12 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(14, 8), dpi=150)
         
         scenarios = df['Scenario'].unique()
-        medians = df.groupby('Scenario')['Total Emissions (kgCO2e)'].median().sort_values()
+        medians = df.groupby('Scenario')['Total Emissions (kgCO2e/batch)'].median().sort_values()
         
         data_to_plot = []
         labels = []
         for sc in medians.index:
-            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e)'].dropna().values
+            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e/batch)'].dropna().values
             if len(data) > 1:  # Violin needs at least 2 points
                 data_to_plot.append(data)
                 labels.append(sc)
@@ -594,8 +596,8 @@ class Visualizer:
                                            wedgeprops=dict(width=0.5, edgecolor='white'))
         
         # Center text
-        ax.text(0, 0, f'{result.total_emissions_kgco2:.1f}\nkgCO₂e', 
-                ha='center', va='center', fontsize=16, fontweight='bold')
+        ax.text(0, 0, f'{result.total_emissions_kgco2:.1f}\nkgCO2e',
+                ha='center', va='center', fontsize=24, fontweight='bold')
         
         ax.set_title(f"Stage Contribution: {result.scenario_name}\n{product_name}", pad=20)
         
@@ -664,10 +666,10 @@ class Visualizer:
         """Horizontal bar: Carbon intensity ranking by scenario."""
         if df.empty: return
         
-        subset = df[df['Yield (%)'] > 1.0]
+        subset = df[df['Final Yield (%)'] > 1.0]
         if subset.empty: return
         
-        grouped = subset.groupby('Scenario')['Intensity (kgCO2e/m²)'].mean().sort_values()
+        grouped = subset.groupby('Scenario')['Total Emission Intensity (kgCO2e/m2)'].mean().sort_values()
         if grouped.empty: return
         
         fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
@@ -770,13 +772,14 @@ class Visualizer:
         self.plot_scenario_comparison(results, product_name)
         
         # Radar
-        self.plot_radar_comparison(results, product_name)
+        #self.plot_radar_comparison(results, product_name)
         
         # Per-scenario plots
-        for r in results:
-            self.plot_waterfall(r, product_name)
-            self.plot_donut_stages(r, product_name)
-            self.plot_tornado_sensitivity(r, product_name=product_name)
+        #for r in results:
+            #self.plot_waterfall(r, product_name)
+            #self.plot_donut_stages(r, product_name)
+            #self.plot_tornado_sensitivity(r, product_name=product_name)
+
         
         print(f"\n   [Complete] All single-run plots saved to: {self.session_dir}")
 
@@ -785,8 +788,8 @@ class Visualizer:
         if df.empty: return
         
         # Distribution plots
-        self.plot_boxplot_batch(df)
-        self.plot_violin_batch(df)
+        #self.plot_boxplot_batch(df)
+        #self.plot_violin_batch(df)
         
         # Intensity (with gradient colors)
         self._plot_batch_intensity(df)

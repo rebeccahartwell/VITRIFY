@@ -70,8 +70,10 @@ SPLIT_YIELD = _get("SPLIT_YIELD")
 REMANUFACTURING_YIELD = _get("REMANUFACTURING_YIELD")
 
 # Process Yields (formerly hardcoded)
+YIELD_SYSTEM_REUSE = _get("YIELD_SYSTEM_REUSE")
 YIELD_REPAIR = _get("YIELD_REPAIR")
 YIELD_DISASSEMBLY_REUSE = _get("YIELD_DISASSEMBLY_REUSE")
+YIELD_DISASSEMBLY_REMANUFACTURE = _get("YIELD_DISASSEMBLY_REMANUFACTURE")
 YIELD_DISASSEMBLY_REPURPOSE = _get("YIELD_DISASSEMBLY_REPURPOSE")
 
 # Processor Fractions (formerly hardcoded)
@@ -133,7 +135,7 @@ DECIMALS = _get("DECIMALS")
 # TYPES (Code constructs, not excel parameters)
 # ============================================================================
 
-RepurposePreset = Literal["light", "medium", "heavy"]
+RepurposePreset = Literal["Light", "Medium", "Heavy"]
 GlazingType = Literal["double", "triple", "single"]
 GlassType = Literal["annealed", "tempered", "laminated"]
 CoatingType = Literal["none", "hard_lowE", "soft_lowE", "solar_control"]
