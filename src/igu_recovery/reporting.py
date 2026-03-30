@@ -22,8 +22,8 @@ def save_scenario_md(result: ScenarioResult, output_dir: str = r"d:\VITRIFY\repo
         # Summary Stats
         f.write("## Summary\n")
         f.write(f"- **Total Emissions**: {result.total_emissions_kgco2:.4f} kgCO2e\n")
-        f.write(f"- **Material Yield**: {result.yield_percent:.1f}%\n")
-        f.write(f"- **Recovered Mass**: {result.final_mass_kg:.2f} kg (from {result.initial_mass_kg:.2f} kg)\n\n")
+        f.write(f"- **Material Yield**: {result.total_recovered_yield:.1f}%\n")
+        f.write(f"- **Recovered Mass**: {result.final_global_mass_kg:.2f} kg (from {result.initial_global_mass_kg:.2f} kg)\n\n")
         
         # Detailed Table
         f.write("## Detailed Breakdown\n")

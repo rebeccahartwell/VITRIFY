@@ -4,13 +4,15 @@ from typing import Dict, Tuple
 
 from .constants import (
     DISASSEMBLY_KGCO2_PER_M2,
+    EF_MAT_GLASS_100RC, EF_MAT_GLASS_VIRGIN,
     REPURPOSE_LIGHT_KGCO2_PER_M2, REPURPOSE_MEDIUM_KGCO2_PER_M2, REPURPOSE_HEAVY_KGCO2_PER_M2,
     INSTALL_SYSTEM_KGCO2_PER_M2, REPAIR_KGCO2_PER_M2, FLOAT_GLASS_REPROCESSING_KGCO2_PER_KG,
-    REMANUFACTURING_KGCO2_PER_M2, RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_M2,
-    YIELD_SYSTEM_REUSE, YIELD_REPAIR, YIELD_DISASSEMBLY_REUSE, YIELD_DISASSEMBLY_REMANUFACTURE, YIELD_DISASSEMBLY_REPURPOSE,
+    RECONDITION_KGCO2_PER_M2, BREAKING_KGCO2_PER_KG,
+    YIELD_SYSTEM_REUSE, YIELD_REPAIR, YIELD_DISASSEMBLY_REUSE, YIELD_DISASSEMBLY_REMANUFACTURE,
+    YIELD_DISASSEMBLY_REPURPOSE,
     SHARE_CULLET_FLOAT, SHARE_CULLET_OPEN_LOOP_GW, SHARE_CULLET_OPEN_LOOP_CONT,
-    EF_MAT_SPACER_ALU, EF_MAT_SPACER_STEEL, EF_MAT_SPACER_SWISS, EF_MAT_SEALANT, EF_MAT_GLASS_VIRGIN,
-    PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+    EF_MAT_SPACER_ALU, EF_MAT_SPACER_STEEL, EF_MAT_SPACER_SWISS, EF_MAT_SEALANT,
+    PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2, EF_PROCESS_COATING
 )
 from .models import (
     ProcessSettings, TransportModeConfig, IGUGroup, FlowState, ScenarioResult, Location, SealGeometry
@@ -88,6 +90,7 @@ def run_scenario_landfill(
     flow_start: FlowState,
     interactive: bool = True,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: Straight to Landfill: All mass recovered goes to landfill
@@ -108,7 +111,9 @@ def run_scenario_landfill(
         
     # Dismantling emissions (still happen?) -> "Straight to landfill" usually implies removal.
     # Using e_site_kgco2_per_m2 (removal)
-    dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
+    #Updated demolition factor for landfill (C1)
+    dismantling_kgco2 = flow_start.area_m2 * 10 * 0.3
+    #dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
 
     #--------------------------------------------
     # ! NEW GLASS REQUIRED TO REACH EQUIVALENT QUANTITY
@@ -116,37 +121,41 @@ def run_scenario_landfill(
         equivalent_product = prompt_yes_no("Would you like to evaluate with consideration of the equivalent original batch?", default=False)
     elif equivalent_product is None:
         equivalent_product = False
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-    # ! Assembly IGU
-    # Material-based Calculation
-    # i. Determine Spacer EF
-    ef_spacer = EF_MAT_SPACER_ALU  # Default
-    if group.spacer_material == "aluminium":
-        ef_spacer = EF_MAT_SPACER_ALU
-    elif group.spacer_material == "steel":
-        ef_spacer = EF_MAT_SPACER_STEEL
-    elif group.spacer_material == "warm_edge_composite":
-        ef_spacer = EF_MAT_SPACER_SWISS
-
-    # ii. Determine Sealant EF
-    ef_sealant = EF_MAT_SEALANT
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
-
-    length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
-    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
-
-    embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
-    # ! Assembly Energy
-    process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
-
+    new_glass_kgco2 = 0
+    assembly_kgco2 = 0
+    install_kgco2 = 0
+    transport_B_kgco2 = 0
     if equivalent_product:
+        ef_new_glass = EF_MAT_GLASS_100RC
+        new_glass_mass = flow_start.mass_kg
+        new_glass_kgco2 += new_glass_mass * ef_new_glass
+        # ! Assembly IGU
+        # Material-based Calculation
+        # i. Determine Spacer EF
+        ef_spacer = EF_MAT_SPACER_ALU  # Default
+        if group.spacer_material == "aluminium":
+            ef_spacer = EF_MAT_SPACER_ALU
+        elif group.spacer_material == "steel":
+            ef_spacer = EF_MAT_SPACER_STEEL
+        elif group.spacer_material == "warm_edge_composite":
+            ef_spacer = EF_MAT_SPACER_SWISS
+
+        # ii. Determine Sealant EF
+        ef_sealant = EF_MAT_SEALANT
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
+
+        length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
+        mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+
+        embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+        # ! Assembly Energy
+        process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        assembly_kgco2 += embodied_new_mat_kgco2 + process_energy_kgco2
+
         logger.info(
             f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
@@ -170,16 +179,16 @@ def run_scenario_landfill(
             stillage_mass_B_kg = n_stillages_B * processes.stillage_mass_empty_kg
 
         total_mass_B_kg = flow_start.mass_kg + stillage_mass_B_kg
-        transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
+        transport_B_kgco2 += get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
 
         # ! Installation
-        install_kgco2 = flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+        install_kgco2 += flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
     if not equivalent_product:
-        new_glass_kgco2 = 0
-        assembly_kgco2 = 0
-        transport_B_kgco2 = 0
-        install_kgco2 = 0
+        new_glass_kgco2 += 0
+        assembly_kgco2 += 0
+        transport_B_kgco2 += 0
+        install_kgco2 += 0
     # --------------------------------------
 
     total = (dismantling_kgco2 + landfill_transport_kgco2 +
@@ -200,11 +209,13 @@ def run_scenario_landfill(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=0.0,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=0.0,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=0.0,
-        yield_percent=0.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=0.0,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=0.0,
+        total_recovered_yield=0.0,
+        recovered_yield_FG_IGU = 0.0,
+        recovered_yield_other = 0.0,
     )
 
 def run_scenario_system_reuse(
@@ -214,10 +225,11 @@ def run_scenario_system_reuse(
     seal_geometry: SealGeometry,
     flow_start: FlowState,
     initial_stats: Dict[str, float],
-    initial_masses: Dict[str, float],
+    initial_global_masses: Dict[str, float],
     interactive: bool = True,
     repair_needed: bool = None,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: IGU System is reused in its recovered form with or without repair (user-determined)
@@ -233,10 +245,10 @@ def run_scenario_system_reuse(
     if interactive:
         print(f"  > Starting Mass: {flow_start.mass_kg:.2f} kg ({flow_start.igus:.1f} IGUs)")
 
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     if interactive:
         site_yield_loss_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.1
     
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     
@@ -342,40 +354,42 @@ def run_scenario_system_reuse(
     elif equivalent_product is None:
         equivalent_product = False
 
-    # NEW GLASS
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg - flow_reuse_ready.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-
-    # IGU
-    # Material-based Calculation
-    # i. Determine Spacer EF
-    ef_spacer = EF_MAT_SPACER_ALU  # Default
-    if group.spacer_material == "aluminium":
-        ef_spacer = EF_MAT_SPACER_ALU
-    elif group.spacer_material == "steel":
-        ef_spacer = EF_MAT_SPACER_STEEL
-    elif group.spacer_material == "warm_edge_composite":
-        ef_spacer = EF_MAT_SPACER_SWISS
-
-    # ii. Determine Sealant EF
-    ef_sealant = EF_MAT_SEALANT
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor = 1 - (flow_reuse_ready.area_m2 / flow_start.area_m2)
-    flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor)
-
-    length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
-    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
-    embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
-
-    # ! Assembly Energy
-    process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
-
+    new_glass_kgco2 = 0
+    assembly_kgco2 = 0
     if equivalent_product:
+        # NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        new_glass_mass = flow_start.mass_kg - flow_reuse_ready.mass_kg
+        new_glass_kgco2 += new_glass_mass * ef_new_glass
+
+        # IGU
+        # Material-based Calculation
+        # i. Determine Spacer EF
+        ef_spacer = EF_MAT_SPACER_ALU  # Default
+        if group.spacer_material == "aluminium":
+            ef_spacer = EF_MAT_SPACER_ALU
+        elif group.spacer_material == "steel":
+            ef_spacer = EF_MAT_SPACER_STEEL
+        elif group.spacer_material == "warm_edge_composite":
+            ef_spacer = EF_MAT_SPACER_SWISS
+
+        # ii. Determine Sealant EF
+        ef_sealant = EF_MAT_SEALANT
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor = (flow_reuse_ready.area_m2 / flow_start.area_m2)
+        flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor)
+
+        length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
+        mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+        embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+
+        # ! Assembly Energy
+        process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        assembly_kgco2 += embodied_new_mat_kgco2 + process_energy_kgco2
+
         logger.info(
             f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
@@ -397,11 +411,12 @@ def run_scenario_system_reuse(
         install_kgco2 += flow_equiv_quantity.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
     if not equivalent_product:
-        new_glass_kgco2 = 0
-        assembly_kgco2 = 0
+        new_glass_kgco2 += 0
+        assembly_kgco2 += 0
         transport_B_kgco2 += 0
         install_kgco2 += 0
     # --------------------------------------
+
 
     # ! Overview
     total = (dismantling_kgco2 + packaging_kgco2 + transport_A_kgco2 + repair_kgco2 + transport_B_kgco2 + install_kgco2 + waste_transport_kgco2 +
@@ -425,11 +440,13 @@ def run_scenario_system_reuse(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=flow_reuse_ready.igus,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=flow_reuse_ready.area_m2,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=flow_reuse_ready.mass_kg,
-        yield_percent=(flow_reuse_ready.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=flow_reuse_ready.area_m2,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=flow_reuse_ready.mass_kg,
+        total_recovered_yield=(flow_reuse_ready.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_FG_IGU = (flow_reuse_ready.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_other = 0.0
     )
 
 
@@ -442,6 +459,7 @@ def run_scenario_component_reuse(
     initial_stats: Dict[str, float],
     interactive: bool = True,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: System is disassembled for Component Reuse
@@ -454,10 +472,10 @@ def run_scenario_component_reuse(
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
 
     # ! On-Site Removal
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     if interactive:
         site_yield_loss_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.1
     
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     if interactive and site_yield_loss > 0:
@@ -482,11 +500,10 @@ def run_scenario_component_reuse(
     # ! System Disassembly (20% loss as standard - configure in project_parameters file)
     logger.info(f"Applying {YIELD_DISASSEMBLY_REUSE * 100}% yield loss for disassembly for component reuse.")
     flow_post_disassembly = apply_yield_loss(flow_post_site_yield_loss, YIELD_DISASSEMBLY_REUSE)
-
+    removed_mass_disassembly = flow_post_site_yield_loss.mass_kg - flow_post_disassembly.mass_kg
     if interactive:
-        removed_mass_disassembly = flow_post_site_yield_loss.mass_kg - flow_post_disassembly.mass_kg
         print(
-            f"  > Yield Loss at System Disassembly Stage ({YIELD_DISASSEMBLY_REUSE:.1%}): {removed_mass_disassembly:.2f} kg sent to Waste.")
+            f"  > Yield Loss at System Disassembly Stage ({YIELD_DISASSEMBLY_REUSE:.1%}): {removed_mass_disassembly:.2f} kg sent to Closed-Loop Recycling.")
         print(f"  > Remaining Mass: {flow_post_disassembly.mass_kg:.2f} kg (Components)")
     
     # ! Component recondition
@@ -514,7 +531,7 @@ def run_scenario_component_reuse(
     # We calculate masses for the FULL group, then scale down by the current flow count
     mat_masses = calculate_material_masses(group, seal_geometry)
     scale_factor = flow_post_disassembly.igus / group.quantity if group.quantity > 0 else 0.0
-    
+
     length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
     mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
     
@@ -522,7 +539,6 @@ def run_scenario_component_reuse(
     
         # iv. Re-Assembly Energy
     process_energy_kgco2 = flow_post_disassembly.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    
     assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
     
     logger.info(f"New Materials Required: Spacer {length_spacer_needed_m:.2f} m, Sealant {mass_sealant_needed_kg:.2f} kg -> {embodied_new_mat_kgco2:.2f} kgCO2e"
@@ -569,33 +585,40 @@ def run_scenario_component_reuse(
         equivalent_product = prompt_yes_no("Would you like to evaluate with consideration of the equivalent original batch?", default=False)
     elif equivalent_product is None:
         equivalent_product = False
-
-    # NEW GLASS
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg - flow_post_disassembly.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-
-    # IGU
-    # Material-based Calculation (carry sealant and spacer from above)
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor_equiv_quant = 1 - (flow_post_disassembly.area_m2 / flow_start.area_m2)
-    flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
-
-    additional_length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor_equiv_quant
-    additional_mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor_equiv_quant
-    additional_embodied_new_mat_kgco2 = (additional_length_spacer_needed_m * ef_spacer) + (additional_mass_sealant_needed_kg * ef_sealant)
-
-    # ! Assembly Energy
-    additional_process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    additional_assembly_kgco2 = additional_embodied_new_mat_kgco2 + additional_process_energy_kgco2
-    assembly_kgco2 += additional_assembly_kgco2
-
+    new_glass_kgco2 = 0
     if equivalent_product:
+        # NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        ef_new_glass_from_reuse_losses = processes.flat_glass_reprocessing_kgco2_per_kg
+        new_glass_mass = flow_start.mass_kg - flow_post_disassembly.mass_kg
+        if new_glass_mass >= removed_mass_disassembly:
+            new_reprocessed_glass = removed_mass_disassembly * ef_new_glass_from_reuse_losses
+            new_glass = (new_glass_mass - removed_mass_disassembly) * ef_new_glass
+            new_glass_kgco2 += new_reprocessed_glass + new_glass
+        else:
+            new_glass = new_glass_mass * ef_new_glass
+            new_glass_kgco2 += new_glass
+
+        # IGU
+        # Material-based Calculation (carry sealant and spacer from above)
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor_equiv_quant = (flow_post_disassembly.area_m2 / flow_start.area_m2)
+        flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
+
+        additional_length_spacer_needed_m = mat_masses["spacer_length_m"] * (1 - scale_factor_equiv_quant)
+        additional_mass_sealant_needed_kg = mat_masses["sealant_kg"] * (1 - scale_factor_equiv_quant)
+        additional_embodied_new_mat_kgco2 = ((additional_length_spacer_needed_m * ef_spacer) +
+                                             (additional_mass_sealant_needed_kg * ef_sealant))
+
+        # ! Assembly Energy
+        additional_process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        additional_assembly_kgco2 = additional_embodied_new_mat_kgco2 + additional_process_energy_kgco2
+        assembly_kgco2 += additional_assembly_kgco2
         logger.info(
-            f"Additional New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
+            f"Additional New Glass Required: {new_glass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
         logger.info(
             f"Additional Assembly: Spacer {additional_length_spacer_needed_m:.2f}m, "
@@ -646,11 +669,13 @@ def run_scenario_component_reuse(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=flow_post_disassembly.igus,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=flow_post_disassembly.area_m2,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=flow_post_disassembly.mass_kg,
-        yield_percent=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=flow_post_disassembly.area_m2,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=flow_post_disassembly.mass_kg,
+        total_recovered_yield=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_FG_IGU = (flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_other = 0.0,
     )
 
 
@@ -663,6 +688,7 @@ def run_scenario_remanufacture(
         initial_stats: Dict[str, float],
         interactive: bool = True,
         equivalent_product: bool = None,
+        default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: System is disassembled for Remanufacture (Product Upgrade)
@@ -675,10 +701,10 @@ def run_scenario_remanufacture(
     dismantling_kgco2 = initial_stats["total_IGU_surface_area_m2"] * processes.e_site_kgco2_per_m2
 
     # ! On-Site Removal
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     if interactive:
         site_yield_loss_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str) / 100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str) / 100.0 if site_yield_loss_str else 0.1
 
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     if interactive and site_yield_loss > 0:
@@ -700,6 +726,7 @@ def run_scenario_remanufacture(
     # ! Disassembly activities Emissions based on available yield
     disassembly_kgco2 = flow_post_site_yield_loss.area_m2 * DISASSEMBLY_KGCO2_PER_M2
     flow_post_disassembly = apply_yield_loss(flow_post_site_yield_loss, YIELD_DISASSEMBLY_REMANUFACTURE)
+    removed_mass_disassembly = flow_post_site_yield_loss.mass_kg - flow_post_disassembly.mass_kg
 
     replaced_pane_mass = 0
     replaced_pane_ratio = 0
@@ -710,16 +737,15 @@ def run_scenario_remanufacture(
         replaced_pane_ratio = (group.thickness_inner_mm / (group.thickness_inner_mm + group.thickness_centre_mm + group.thickness_outer_mm))
         replaced_pane_mass = replaced_pane_ratio * flow_post_disassembly.mass_kg
 
-    removed_mass_disassembly = flow_post_site_yield_loss.mass_kg - flow_post_disassembly.mass_kg
     if interactive:
-
         print(
-            f"  > Yield Loss at System Disassembly Stage ({YIELD_DISASSEMBLY_REMANUFACTURE:.1%}): {removed_mass_disassembly:.2f} kg sent to Waste. \n"
-            f"  > Removal of Outer pane ({replaced_pane_ratio:.1%}): {float(replaced_pane_mass):.2f} kg set to Waste.")
+            f"  > Yield Loss at System Disassembly Stage ({YIELD_DISASSEMBLY_REMANUFACTURE:.1%}): {removed_mass_disassembly:.2f} kg sent to Closed-Loop Recycling. \n"
+            f"  > Removal of Outer pane ({replaced_pane_ratio:.1%}): {float(replaced_pane_mass):.2f} kg set to Closed-Loop Recycling.")
 
-    # ! New (coated) glass required for remanufactured unit
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_kgco2 = replaced_pane_mass * ef_new_glass
+    # ! New glass required for remanufactured unit
+    ef_coating = EF_PROCESS_COATING
+    ef_new_glass = EF_MAT_GLASS_100RC
+    new_glass_kgco2 = (replaced_pane_mass * ef_new_glass)
 
     logger.info(
         f"New Glass Required: {replaced_pane_mass:.2f} kg, equivalent to {new_glass_kgco2:.2f} kgCO2e")
@@ -750,13 +776,12 @@ def run_scenario_remanufacture(
 
     # iv. Re-Assembly Energy
     process_energy_kgco2 = flow_post_disassembly.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-
-    assembly_kgco2 = new_glass_kgco2 + embodied_new_mat_kgco2 + process_energy_kgco2
+    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
 
     logger.info(
         f"New Materials Required: Spacer {length_spacer_needed_m:.2f} m, Sealant {mass_sealant_needed_kg:.2f} kg -> {embodied_new_mat_kgco2:.2f} kgCO2e"
-        f"\n Assembly: {process_energy_kgco2:.2f} kgCO2e "
-        f"\n Total Emissions Associated with Re-manufacture: {assembly_kgco2:.2f} kgCO2e")
+        f"\n Assembly: {assembly_kgco2:.2f} kgCO2e "
+        f"\n Total Emissions Associated with Re-manufacture: {(assembly_kgco2 + new_glass_kgco2):.2f} kgCO2e")
 
     # ! Next location
     if "processor_to_reuse" not in processes.route_configs:
@@ -800,31 +825,39 @@ def run_scenario_remanufacture(
     elif equivalent_product is None:
         equivalent_product = False
 
-    # NEW GLASS
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg - flow_post_disassembly.mass_kg
-    additional_new_glass_kgco2 = new_glass_mass * ef_new_glass
-    new_glass_kgco2 += additional_new_glass_kgco2
-
-    # IGU
-    # Material-based Calculation (carry sealant and spacer from above)
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor_equiv_quant = 1 - (flow_post_disassembly.area_m2 / flow_start.area_m2)
-    flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
-
-    additional_length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor_equiv_quant
-    additional_mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor_equiv_quant
-    additional_embodied_new_mat_kgco2 = (additional_length_spacer_needed_m * ef_spacer) + (additional_mass_sealant_needed_kg * ef_sealant)
-
-    # ! Assembly Energy
-    additional_process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    additional_assembly_kgco2 = additional_embodied_new_mat_kgco2 + additional_process_energy_kgco2
-    assembly_kgco2 += additional_assembly_kgco2
 
     if equivalent_product:
+        # NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        ef_new_glass_from_reuse_losses = processes.flat_glass_reprocessing_kgco2_per_kg
+        new_glass_mass = flow_start.mass_kg - flow_post_disassembly.mass_kg
+        additional_new_glass_kgco2 = 0
+        if removed_mass_disassembly >= new_glass_mass:
+            new_reprocessed_glass = removed_mass_disassembly * ef_new_glass_from_reuse_losses
+            new_glass = (new_glass_mass - removed_mass_disassembly) * ef_new_glass
+            additional_new_glass_kgco2 += new_reprocessed_glass + new_glass
+        else:
+            new_glass = new_glass_mass * ef_new_glass
+            additional_new_glass_kgco2 += new_glass
+
+        # IGU
+        # Material-based Calculation (carry sealant and spacer from above)
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor_equiv_quant = (flow_post_disassembly.area_m2 / flow_start.area_m2)
+        flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
+
+        additional_length_spacer_needed_m = mat_masses["spacer_length_m"] * (1 - scale_factor_equiv_quant)
+        additional_mass_sealant_needed_kg = mat_masses["sealant_kg"] * (1 - scale_factor_equiv_quant)
+        additional_embodied_new_mat_kgco2 = (additional_length_spacer_needed_m * ef_spacer) + (
+                    additional_mass_sealant_needed_kg * ef_sealant)
+
+        # ! Assembly Energy
+        additional_process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        additional_assembly_kgco2 = additional_embodied_new_mat_kgco2 + additional_process_energy_kgco2
+
         logger.info(
             f"Additional New Glass Required: {new_glass_mass:.2f}kg, equivalent to {additional_new_glass_kgco2:.2f}kgCO2e")
 
@@ -840,8 +873,9 @@ def run_scenario_remanufacture(
             stillage_mass_equiv_product_B_kg = n_stillages_equiv_product_B * processes.stillage_mass_empty_kg
 
         total_mass_equiv_product_B_kg = (flow_equiv_quantity.mass_kg + stillage_mass_equiv_product_B_kg)
+        new_glass_kgco2 += additional_new_glass_kgco2
+        assembly_kgco2 += additional_assembly_kgco2
         transport_B_kgco2 += get_route_emissions(total_mass_equiv_product_B_kg, "processor_to_reuse", processes, transport)
-
         # ! Installation
         install_kgco2 += flow_equiv_quantity.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
@@ -873,11 +907,14 @@ def run_scenario_remanufacture(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=flow_post_disassembly.igus,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=flow_post_disassembly.area_m2,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=flow_post_disassembly.mass_kg,
-        yield_percent=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=flow_post_disassembly.area_m2,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=flow_post_disassembly.mass_kg,
+        total_recovered_yield=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_FG_IGU=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_other = 0.0
+
     )
 
 def run_scenario_repurpose(
@@ -890,6 +927,7 @@ def run_scenario_repurpose(
     interactive: bool = True,
     repurpose_intensity: str = None,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: System is disassembled for components to be repurposed (into different product)
@@ -899,10 +937,10 @@ def run_scenario_repurpose(
         print_header("Scenario: Component Repurpose")
     
     # ! On-Site Removal
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     if interactive:
         site_yield_loss_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.1
     
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     if interactive and site_yield_loss > 0:
@@ -968,9 +1006,9 @@ def run_scenario_repurpose(
     total_mass_B_kg = flow_post_disassembly.mass_kg + stillage_mass_B_kg
     transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
 
-
-    # ! New glass required to reach equivalent quantity
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
+    # --------------------------------------------
+    # ! NEW GLASS REQUIRED TO REACH EQUIVALENT QUANTITY
+    ef_new_glass = EF_MAT_GLASS_100RC
     new_glass_mass = flow_start.mass_kg
     new_glass_kgco2 = new_glass_mass * ef_new_glass
 
@@ -1033,7 +1071,7 @@ def run_scenario_repurpose(
 
 
     # ! Note, currently considered as zero value given that an assumption for the repurposed product is not yet made
-    install_kgco2 = flow_post_disassembly.area_m2 * 0
+    install_kgco2 += flow_post_disassembly.area_m2 * 0
 
     # ! Waste Transport
     waste_transport_kgco2 = 0.0
@@ -1052,37 +1090,39 @@ def run_scenario_repurpose(
         equivalent_product = prompt_yes_no("Would you like to evaluate with consideration of the equivalent original batch?", default=False)
     elif equivalent_product is None:
         equivalent_product = False
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-    # ! Assembly IGU
-    # Material-based Calculation
-    # i. Determine Spacer EF
-    ef_spacer = EF_MAT_SPACER_ALU  # Default
-    if group.spacer_material == "aluminium":
-        ef_spacer = EF_MAT_SPACER_ALU
-    elif group.spacer_material == "steel":
-        ef_spacer = EF_MAT_SPACER_STEEL
-    elif group.spacer_material == "warm_edge_composite":
-        ef_spacer = EF_MAT_SPACER_SWISS
 
-    # ii. Determine Sealant EF
-    ef_sealant = EF_MAT_SEALANT
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
-
-    length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
-    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
-
-    embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
-    # ! Assembly Energy
-    process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
 
     if equivalent_product:
+        #!!!!!! NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        new_glass_mass = flow_start.mass_kg
+        new_glass_kgco2 = new_glass_mass * ef_new_glass
+        # ! Assembly IGU
+        # Material-based Calculation
+        # i. Determine Spacer EF
+        ef_spacer = EF_MAT_SPACER_ALU  # Default
+        if group.spacer_material == "aluminium":
+            ef_spacer = EF_MAT_SPACER_ALU
+        elif group.spacer_material == "steel":
+            ef_spacer = EF_MAT_SPACER_STEEL
+        elif group.spacer_material == "warm_edge_composite":
+            ef_spacer = EF_MAT_SPACER_SWISS
+
+        # ii. Determine Sealant EF
+        ef_sealant = EF_MAT_SEALANT
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
+
+        length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
+        mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+
+        embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+        # ! Assembly Energy
+        process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
         logger.info(
             f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
@@ -1108,8 +1148,6 @@ def run_scenario_repurpose(
         total_mass_B_kg = flow_start.mass_kg + stillage_mass_B_kg
         transport_B_kgco2 += get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
 
-        # ! Installation
-        install_kgco2 = flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
     if not equivalent_product:
         new_glass_kgco2 = 0
@@ -1141,11 +1179,14 @@ def run_scenario_repurpose(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=flow_post_disassembly.igus,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=flow_post_disassembly.area_m2,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=flow_post_disassembly.mass_kg,
-        yield_percent=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=flow_post_disassembly.area_m2,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=flow_post_disassembly.mass_kg,
+        total_recovered_yield=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+        recovered_yield_FG_IGU=0.0,
+        recovered_yield_other=(flow_post_disassembly.area_m2 / flow_start.area_m2 * 100.0) if flow_start.area_m2 > 0 else 0.0,
+
     )
 
 
@@ -1158,6 +1199,7 @@ def run_scenario_closed_loop_recycling(
     interactive: bool = True,
     send_intact: bool = None,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario: Closed-loop Recycling
@@ -1172,25 +1214,27 @@ def run_scenario_closed_loop_recycling(
         send_intact = True
     
     # ! On-site removal + Break IGU
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     yield_break = 0.0
     
     # ! Standard removal yield
     if interactive:
         # Change default yield loss for sending in-tact IGUs here (default = 0)
         site_yield_loss_str = input(style_prompt("% yield loss at removal from building (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.1
 
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     flow_step1 = apply_yield_loss(flow_post_site_yield_loss, yield_break)
 
     # ! Emissions
     dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
+    disassembly_kgco2 = 0
     if send_intact:
-        dismantling_kgco2 += (flow_post_site_yield_loss.area_m2 * DISASSEMBLY_KGCO2_PER_M2)
+        disassembly_kgco2 += (flow_post_site_yield_loss.area_m2 * DISASSEMBLY_KGCO2_PER_M2)
     if not send_intact:
         # Breaking emissions
-        dismantling_kgco2 += flow_post_site_yield_loss.area_m2 * BREAKING_KGCO2_PER_M2
+        dismantling_kgco2 += flow_post_site_yield_loss.mass_kg * BREAKING_KGCO2_PER_KG
+        disassembly_kgco2 += 0
 
     # ! Transport A (Origin -> Processor)
     stillage_mass_A_kg = 0.0
@@ -1235,13 +1279,13 @@ def run_scenario_closed_loop_recycling(
     if is_laminated:
         logger.warning(f"Laminated glass detected! If shipped in-tact, the closed-loop yield for the relevant laminated pane is reduced to 0%. "
                        f"If not in-tact, the closed-loop yield for the full product is reduced to 0%.")
-        CULLET_FLOAT_SHARE = non_laminated_yield
+        CULLET_FLOAT_SHARE = non_laminated_yield * SHARE_CULLET_FLOAT
 
     else:
         CULLET_FLOAT_SHARE = SHARE_CULLET_FLOAT
 
     flow_float = apply_yield_loss(flow_post_site_yield_loss, (1.0 - CULLET_FLOAT_SHARE))
-    flow_open_loop = apply_yield_loss(flow_post_site_yield_loss, (CULLET_FLOAT_SHARE))
+    flow_open_loop = apply_yield_loss(flow_post_site_yield_loss, CULLET_FLOAT_SHARE)
 
     if interactive:
         if is_laminated:
@@ -1257,7 +1301,7 @@ def run_scenario_closed_loop_recycling(
 
     # ! Glass Reprocessing
     #   i.Recovered Yield to be reprocessed
-    flat_glass_reprocessing_kgco2 = processes.flat_glass_reprocessing_kgco2_per_kg * flow_post_site_yield_loss.mass_kg
+    flat_glass_reprocessing_kgco2 = processes.flat_glass_reprocessing_kgco2_per_kg * flow_float.mass_kg
 
     # ! Assembly IGU
     # Material-based Calculation
@@ -1276,7 +1320,7 @@ def run_scenario_closed_loop_recycling(
     # iii. Calculate Mass of New Materials needed
     # We calculate masses for the FULL group, then scale down by the current flow count
     mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor = flow_post_site_yield_loss.igus / group.quantity if group.quantity > 0 else 0.0
+    scale_factor = flow_float.igus / group.quantity if group.quantity > 0 else 0.0
 
     length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
     mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
@@ -1284,7 +1328,7 @@ def run_scenario_closed_loop_recycling(
     embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
 
     # ! Assembly Energy
-    process_energy_kgco2 = flow_post_site_yield_loss.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+    process_energy_kgco2 = flow_float.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
     assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
 
     logger.info(
@@ -1304,14 +1348,14 @@ def run_scenario_closed_loop_recycling(
     # ! Transport B (Processor -> Next use as recycled product)
     stillage_mass_B_kg = 0.0
     if processes.igus_per_stillage > 0:
-        n_stillages_B = ceil(flow_start.igus / processes.igus_per_stillage)
+        n_stillages_B = ceil(flow_float.igus / processes.igus_per_stillage)
         stillage_mass_B_kg = n_stillages_B * processes.stillage_mass_empty_kg
 
-    total_mass_B_kg = flow_start.mass_kg + stillage_mass_B_kg
+    total_mass_B_kg = flow_float.mass_kg + stillage_mass_B_kg
     transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
 
     # ! Installation
-    install_kgco2 = flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+    install_kgco2 = flow_float.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
     # ! Open-Loop Transport. Here, it is assumed that open-loop recycling takes place in the form of glass wool.
     open_loop_transport_kgco2 = 0.0
@@ -1323,7 +1367,7 @@ def run_scenario_closed_loop_recycling(
             processes.route_configs["processor_to_open_loop_GW"] = configure_route(
                 "Processor -> Glass Wool Recycling Facility", transport.processor, transport.open_loop_GW, interactive=True
             )
-        open_loop_transport_kgco2 += get_route_emissions(flow_open_loop.mass_kg, "processor_to_open_loop_GW", processes, transport)
+    open_loop_transport_kgco2 += get_route_emissions(flow_open_loop.mass_kg, "processor_to_open_loop_GW", processes, transport)
 
     # ! Waste Transport
     waste_transport_kgco2 = 0.0
@@ -1343,31 +1387,30 @@ def run_scenario_closed_loop_recycling(
         equivalent_product = prompt_yes_no("Would you like to evaluate with consideration of the equivalent original batch?", default=False)
     elif equivalent_product is None:
         equivalent_product = False
-
-    # NEW GLASS
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg - flow_post_site_yield_loss.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-
-    # IGU
-    # Material-based Calculation (carry sealant and spacer from above)
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor_equiv_quant = 1 - (flow_post_site_yield_loss.area_m2 / flow_start.area_m2)
-    flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
-
-    length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor_equiv_quant
-    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor_equiv_quant
-    embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
-
-    # ! Assembly Energy
-    process_energy_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
-    assembly_kgco2 += assembly_kgco2
-
+    new_glass_kgco2 = 0
     if equivalent_product:
+        # NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        new_glass_mass = flow_start.mass_kg - flow_float.mass_kg
+        new_glass_kgco2 += new_glass_mass * ef_new_glass
+
+        # IGU
+        # Material-based Calculation (carry sealant and spacer from above)
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor_equiv_quant = (flow_float.mass_kg / flow_start.mass_kg)
+        flow_equiv_quantity = apply_yield_loss(flow_start, scale_factor_equiv_quant)
+
+        length_spacer_needed_m = mat_masses["spacer_length_m"] * (1 - scale_factor_equiv_quant)
+        mass_sealant_needed_kg = mat_masses["sealant_kg"] * (1 - scale_factor_equiv_quant)
+        embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+
+        # ! Assembly Energy
+        process_energy_equiv_quantity_kgco2 = flow_equiv_quantity.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        assembly_equiv_quantity_kgco2 = embodied_new_mat_kgco2 + process_energy_equiv_quantity_kgco2
+        assembly_kgco2 += assembly_equiv_quantity_kgco2
         logger.info(
             f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
 
@@ -1403,6 +1446,7 @@ def run_scenario_closed_loop_recycling(
     by_stage = {
         "Building Site Dismantling": dismantling_kgco2,
         "Transport A": transport_A_kgco2,
+        "System Disassembly": disassembly_kgco2,
         "Glass Reprocessing": flat_glass_reprocessing_kgco2,
         "New Glass": new_glass_kgco2,
         "Re-Assembly": assembly_kgco2,
@@ -1418,11 +1462,13 @@ def run_scenario_closed_loop_recycling(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus=flow_float.igus, # Pseudo-count
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2=flow_float.area_m2,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg=flow_float.mass_kg,
-        yield_percent=CULLET_FLOAT_SHARE * 100.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2=flow_float.area_m2,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg=flow_float.mass_kg,
+        total_recovered_yield=CULLET_FLOAT_SHARE * 100.0,
+        recovered_yield_FG_IGU =CULLET_FLOAT_SHARE * 100.0,
+        recovered_yield_other = (flow_open_loop.mass_kg / flow_start.mass_kg) * 100.0
     )
 
 
@@ -1435,6 +1481,7 @@ def run_scenario_open_loop_recycling(
     interactive: bool = True,
     send_intact: bool = None,
     equivalent_product: bool = None,
+    default_landfill: bool = None,
 ) -> ScenarioResult:
     """
     Scenario (e): Open-loop Recycling
@@ -1450,20 +1497,23 @@ def run_scenario_open_loop_recycling(
         send_intact = True
     
     # ! On-site Yield
-    site_yield_loss = 0.0
+    site_yield_loss = 0.1
     yield_break = 0.0
     if interactive:
         site_yield_loss_str = input(style_prompt("% yield loss at on-site removal (0-100) [default=0]: ")).strip()
-        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.0
+        site_yield_loss = float(site_yield_loss_str)/100.0 if site_yield_loss_str else 0.1
 
     flow_post_site_yield_loss = apply_yield_loss(flow_start, site_yield_loss)
     
+    # ! Emissions
     dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
+    disassembly_kgco2 = 0
     if send_intact:
-        dismantling_kgco2 += (flow_post_site_yield_loss.area_m2 * DISASSEMBLY_KGCO2_PER_M2)
+        disassembly_kgco2 += (flow_post_site_yield_loss.area_m2 * DISASSEMBLY_KGCO2_PER_M2)
     if not send_intact:
         # Breaking emissions
-        dismantling_kgco2 += flow_post_site_yield_loss.area_m2 * BREAKING_KGCO2_PER_M2
+        dismantling_kgco2 += flow_post_site_yield_loss.mass_kg * BREAKING_KGCO2_PER_KG
+        disassembly_kgco2 += 0
 
     # ! Transport A (Origin -> Processor)
     stillage_mass_A_kg = 0.0
@@ -1522,40 +1572,44 @@ def run_scenario_open_loop_recycling(
         equivalent_product = prompt_yes_no("Would you like to evaluate with consideration of the equivalent original batch?", default=False)
     elif equivalent_product is None:
         equivalent_product = False
-    ef_new_glass = EF_MAT_GLASS_VIRGIN
-    new_glass_mass = flow_start.mass_kg
-    new_glass_kgco2 = new_glass_mass * ef_new_glass
-    # ! Assembly IGU
-    # Material-based Calculation
-    # i. Determine Spacer EF
-    ef_spacer = EF_MAT_SPACER_ALU  # Default
-    if group.spacer_material == "aluminium":
-        ef_spacer = EF_MAT_SPACER_ALU
-    elif group.spacer_material == "steel":
-        ef_spacer = EF_MAT_SPACER_STEEL
-    elif group.spacer_material == "warm_edge_composite":
-        ef_spacer = EF_MAT_SPACER_SWISS
 
-    # ii. Determine Sealant EF
-    ef_sealant = EF_MAT_SEALANT
-
-    # iii. Calculate Mass of New Materials needed
-    # We calculate masses for the FULL group, then scale down by the current flow count
-    mat_masses = calculate_material_masses(group, seal_geometry)
-    scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
-
-    length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
-    mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
-
-    embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
-    # ! Assembly Energy
-    process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
-    assembly_kgco2 = embodied_new_mat_kgco2 + process_energy_kgco2
-
+    new_glass_kgco2 = 0
+    assembly_kgco2 = 0
+    transport_B_kgco2 = 0
+    install_kgco2 = 0
     if equivalent_product:
+        #!!! NEW GLASS
+        ef_new_glass = EF_MAT_GLASS_100RC
+        new_glass_mass = flow_start.mass_kg
+        new_glass_kgco2 += new_glass_mass * ef_new_glass
+        # ! Assembly IGU
+        # Material-based Calculation
+        # i. Determine Spacer EF
+        ef_spacer = EF_MAT_SPACER_ALU  # Default
+        if group.spacer_material == "aluminium":
+            ef_spacer = EF_MAT_SPACER_ALU
+        elif group.spacer_material == "steel":
+            ef_spacer = EF_MAT_SPACER_STEEL
+        elif group.spacer_material == "warm_edge_composite":
+            ef_spacer = EF_MAT_SPACER_SWISS
+
+        # ii. Determine Sealant EF
+        ef_sealant = EF_MAT_SEALANT
+
+        # iii. Calculate Mass of New Materials needed
+        # We calculate masses for the FULL group, then scale down by the current flow count
+        mat_masses = calculate_material_masses(group, seal_geometry)
+        scale_factor = flow_start.igus / group.quantity if group.quantity > 0 else 0.0
+
+        length_spacer_needed_m = mat_masses["spacer_length_m"] * scale_factor
+        mass_sealant_needed_kg = mat_masses["sealant_kg"] * scale_factor
+
+        embodied_new_mat_kgco2 = (length_spacer_needed_m * ef_spacer) + (mass_sealant_needed_kg * ef_sealant)
+        # ! Assembly Energy
+        process_energy_kgco2 = flow_start.area_m2 * PROCESS_ENERGY_ASSEMBLY_KGCO2_PER_M2
+        assembly_kgco2 += embodied_new_mat_kgco2 + process_energy_kgco2
         logger.info(
             f"New Glass Required: {new_glass_mass:.2f}kg, equivalent to {new_glass_kgco2:.2f}kgCO2e")
-
         logger.info(
             f"Assembly: Spacer {length_spacer_needed_m:.2f}m, "
             f"Sealant {mass_sealant_needed_kg:.2f}kg -> {assembly_kgco2:.2f} kgCO2e")
@@ -1576,16 +1630,16 @@ def run_scenario_open_loop_recycling(
             stillage_mass_B_kg = n_stillages_B * processes.stillage_mass_empty_kg
 
         total_mass_B_kg = flow_start.mass_kg + stillage_mass_B_kg
-        transport_B_kgco2 = get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
+        transport_B_kgco2 += get_route_emissions(total_mass_B_kg, "processor_to_reuse", processes, transport)
 
         # ! Installation
-        install_kgco2 = flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
+        install_kgco2 += flow_start.area_m2 * INSTALL_SYSTEM_KGCO2_PER_M2
 
     if not equivalent_product:
-        new_glass_kgco2 = 0
-        assembly_kgco2 = 0
-        transport_B_kgco2 = 0
-        install_kgco2 = 0
+        new_glass_kgco2 += 0
+        assembly_kgco2 += 0
+        transport_B_kgco2 += 0
+        install_kgco2 += 0
     # --------------------------------------
 
     total = (dismantling_kgco2 + transport_A_kgco2 + open_loop_transport_kgco2 + waste_transport_kgco2 +
@@ -1594,6 +1648,7 @@ def run_scenario_open_loop_recycling(
     by_stage = {
         "Building Site Dismantling": dismantling_kgco2,
         "Transport A": transport_A_kgco2,
+        "System Disassembly": disassembly_kgco2,
         "Open-Loop Transport": open_loop_transport_kgco2,
         "Landfill Transport (Waste)": waste_transport_kgco2,
         "New Glass": new_glass_kgco2,
@@ -1608,10 +1663,12 @@ def run_scenario_open_loop_recycling(
         by_stage=by_stage,
         initial_igus=flow_start.igus,
         final_igus= 0,
-        initial_area_m2=flow_start.area_m2,
-        final_area_m2= 0,
-        initial_mass_kg=flow_start.mass_kg,
-        final_mass_kg= 0,
-        yield_percent=final_useful_fraction * 100.0
+        initial_global_area_m2=flow_start.area_m2,
+        final_global_area_m2= 0,
+        initial_global_mass_kg=flow_start.mass_kg,
+        final_global_mass_kg= 0,
+        total_recovered_yield=final_useful_fraction * 100.0,
+        recovered_yield_FG_IGU = 0.0,
+        recovered_yield_other = final_useful_fraction * 100.0,
     )
 

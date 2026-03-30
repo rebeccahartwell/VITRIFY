@@ -1,10 +1,16 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import seaborn as sns
 import pandas as pd
+import numpy as np
+import math
 import os
 from datetime import datetime
 from typing import List, Dict, Optional
 from .models import ScenarioResult
 import logging
+
+#Seaborn colour palettes https://www.practicalpythonfordatascience.com/ap_seaborn_palette
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +143,7 @@ class Visualizer:
 
         names = [r.scenario_name.replace(" ", "\n") for r in results]
         emissions = [r.total_emissions_kgco2 for r in results]
-        yields = [r.yield_percent for r in results]
+        yields = [r.total_recovered_yield for r in results]
         
         fig, ax1 = plt.subplots(figsize=(12, 7), dpi=150)
         
@@ -160,9 +166,9 @@ class Visualizer:
         # 2. Yield (Line)
         ax2 = ax1.twinx()
         ax2.plot(names, yields, color=self.colors['yield_dark'], marker='o', linewidth=3, markersize=10, 
-                 markerfacecolor='white', markeredgewidth=2, label='Final Yield')
+                 markerfacecolor='white', markeredgewidth=2, label='Recovered Yield')
         
-        ax2.set_ylabel('Final Yield (%)', color=self.colors['yield_dark'], fontweight='bold')
+        ax2.set_ylabel('Recovered Yield (%)', color=self.colors['yield_dark'], fontweight='bold')
         ax2.tick_params(axis='y', labelcolor=self.colors['yield_dark'])
         ax2.set_ylim(0, 115)
         ax2.spines['right'].set_visible(False) # Clean look
@@ -193,6 +199,9 @@ class Visualizer:
         
         # Call all batch visualization methods
         self.generate_all_batch_plots(df)
+
+
+
 
     def _plot_batch_distribution(self, df: pd.DataFrame):
         fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
@@ -279,7 +288,7 @@ class Visualizer:
         for i, sc in enumerate(scenarios):
             subset = df[df['Scenario'] == sc]
             # Big bubbles with transparency
-            ax.scatter(subset['Final Yield (%)'], subset['Total Emissions (kgCO2e/batch)'],
+            ax.scatter(subset['Recovered Yield (%)'], subset['Total Emissions (kgCO2e/batch)'],
                        label=sc, alpha=0.6, edgecolors='white', linewidth=1.5, s=150, color=cmap(i))
             
         ax.set_xlabel("Material Yield (%)", fontweight='bold')
@@ -298,11 +307,346 @@ class Visualizer:
         plt.close(fig)
         print(f"   [Plot] Saved batch scatter to: {filepath}")
 
+    def _plot_product_intensity(self, df: pd.DataFrame):
+        sns.set_theme(style="whitegrid")
+
+        for product, subset in df.groupby("Product Name"):
+            # Sort scenarios by total emissions for readability
+            subset = subset.sort_values("Total Emissions (kgCO2e/batch)")
+
+            # Create a new figure and axis for each product
+            fig, ax = plt.subplots(figsize=(8, 6))
+
+            # Plot the horizontal bar chart
+            sns.barplot(
+                data=subset,
+                x="Total Emissions (kgCO2e/batch)",
+                y="Scenario",
+                color="steelblue",
+                ax=ax
+            )
+
+            # Add title and labels
+            ax.set_title(product)
+            ax.set_xlabel("Total Emission Intensity (kgCO2e/m2)")
+            ax.set_ylabel("Scenario")
+
+            # Adjust layout so labels/legend are not clipped
+            fig.tight_layout()
+
+            # Save the figure with a product-specific filename
+            filepath = self.get_save_path(f"{product}_intensity.png")
+            fig.savefig(filepath, dpi=300, bbox_inches="tight")
+            print(f"   [Plot] Saved intensity plot to: {filepath}")
+
+            # Close the figure to free memory
+            plt.close(fig)
+
+    def _plot_product_intensity_faceted(self, df: pd.DataFrame):
+        sns.set_theme(style="whitegrid")
+
+        # Sort scenarios within each product (important for readability)
+        df_sorted = df.sort_values(
+            ["Product Name", "Total Emission Intensity (kgCO2e/m2)"]
+        )
+
+        g = sns.FacetGrid(
+            df_sorted,
+            col="Product Name",
+            sharex=True,
+            sharey=False,
+            height=6,
+            aspect=0.8
+        )
+
+        g.map_dataframe(
+            sns.barplot,
+            x="Total Emissions (kgCO2e/batch)",
+            y="Scenario",
+            color="steelblue"
+        )
+
+        g.set_axis_labels("Total Emissions (kgCO2e/batch)", "Scenario")
+        g.set_titles("{col_name}")
+
+        # Apply layout to the FacetGrid figure
+        g.fig.tight_layout()
+
+        filepath = self.get_save_path("product_intensity_faceted.png")
+        g.fig.savefig(filepath, dpi=300, bbox_inches="tight")
+        plt.close(g.fig)  # 👈 correct way to close FacetGrid
+
+        print(f"   [Plot] Saved intensity plot to: {filepath}")
+
+    def _plot_product_intensity_stacked(self, df: pd.DataFrame):
+        sns.set_theme(style="whitegrid")
+        mpl.rcParams["font.family"] = "Verdana"
+
+        stack_cols = [
+            "[Stage] Building Site Dismantling",
+            "[Stage] Transport: Site->Processor",
+            "[Stage] System Disassembly",
+            "[Stage] Repair",
+            "[Stage] Recondition",
+            "[Stage] Repurpose",
+            "[Stage] Glass Reprocessing",
+            "[Stage] New Glass",
+            "[Stage] IGU Re-Assembly",
+            "[Stage] Packaging",
+            "[Stage] Transport: Processor->Next Use",
+            "[Stage] Next Use Installation",
+            "[Stage] Transport: Processor->Open-Loop Facility",
+            "[Stage] Transport: Landfill Disposal",
+        ]
+        palette_colors = [
+            "#1B9E77",
+            "#FC8D62",
+            "#7570B3",
+            "#A6D854",
+            "#D95F02",
+            "#8DA0CB",
+            "#E7298A",
+            "#66C2A5",
+            "#E6AB02",
+            "#E78AC3",
+            "#66A61E",
+            "#FFD92F",
+            "#666666",
+            "#A6761D",
+        ]
+        palette = sns.color_palette(palette_colors[:len(stack_cols)])
+        colors = dict(zip(stack_cols, palette))
+        # Initiate if landfill to be omitted:
+        #df = df[df['Recovered Yield (%)'] > 0.0]
+        df = df[df["Scenario"] != "Closed-loop (Intact)"]
+        df = df[df["Scenario"] != "Open-loop (Intact)"]
+        xmax = df["Total Emission Intensity (kgCO2e/m2)"].max()
+
+        for product, subset in df.groupby("Product Name"):
+            subset = subset.copy()
+            subset[stack_cols] = subset[stack_cols].div(subset["Initial Global Area (m2)"], axis=0)
+            subset["Total"] = subset[stack_cols].sum(axis=1)
+            subset = subset.sort_values("Total")
+
+            y = np.arange(len(subset))
+            left = np.zeros(len(subset))
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.yaxis.grid(False)
+            ax.xaxis.grid(False)
+
+            for col in stack_cols:
+                ax.barh(
+                    y,
+                    subset[col],
+                    height = 0.8,
+                    left=left,
+                    label=col,
+                    color=colors[col],
+                    edgecolor="none"
+                )
+                left += subset[col]
 
 
-    def _plot_batch_intensity(self, df: pd.DataFrame):
+            upper = math.ceil((xmax * 1.05) / 10) * 10
+            ax.set_xlim(0, upper)
+            ax.set_yticks(y)
+            ax.set_yticklabels(subset["Scenario"],fontsize=12)
+            ax.set_xlabel("Emissions (kgCO$_2$e/m$^2$)", fontsize=12)
+            #ax.set_title(product)
+
+            # Total labels
+            for i, total in enumerate(subset["Total"]):
+                ax.text(
+                    total + 0.5,
+                    i,
+                    f"{total:.0f}",
+                    va="center",
+                    fontsize = 12,
+                    fontweight="bold")
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles,
+                [l.replace("[Stage] ", "") for l in labels],
+                title="Emission Source",
+                bbox_to_anchor=(1.05, 1),
+                loc="upper left"
+            )
+
+            #fig.tight_layout()
+
+            filepath = self.get_save_path(f"{product}_intensity_stacked.png")
+            fig.savefig(filepath, dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+            print(f"   [Plot] Saved intensity plot to: {filepath}")
+
+    def _plot_product_intensity_comparison_from_csv(
+            self,
+            csv_path1: str,
+            csv_path2: str,
+            product_filter=None,
+            labels=("Local", "European")
+    ):
+        import numpy as np
+        import pandas as pd
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        import math
+
+
+        df1 = pd.read_csv(csv_path1)
+        df2 = pd.read_csv(csv_path2)
+
+        sns.set_theme(style="whitegrid")
+        mpl.rcParams["font.family"] = "Verdana"
+
+        stack_cols = [
+            "[Stage] Building Site Dismantling",
+            "[Stage] Transport: Site->Processor",
+            "[Stage] System Disassembly",
+            "[Stage] Repair",
+            "[Stage] Recondition",
+            "[Stage] Repurpose",
+            "[Stage] Glass Reprocessing",
+            "[Stage] New Glass",
+            "[Stage] IGU Re-Assembly",
+            "[Stage] Packaging",
+            "[Stage] Transport: Processor->Next Use",
+            "[Stage] Next Use Installation",
+            "[Stage] Transport: Processor->Open-Loop Facility",
+            "[Stage] Transport: Landfill Disposal",
+        ]
+
+        palette_colors = [
+            "#1B9E77", "#FC8D62", "#7570B3", "#A6D854",
+            "#D95F02", "#8DA0CB", "#E7298A", "#66C2A5",
+            "#E6AB02", "#E78AC3", "#66A61E", "#FFD92F",
+            "#666666", "#A6761D",
+        ]
+        palette = sns.color_palette(palette_colors[:len(stack_cols)])
+        colors = dict(zip(stack_cols, palette))
+
+        # --- Prepare data ---
+        df1 = df1.copy()
+        df2 = df2.copy()
+
+        df1["Source"] = labels[0]
+        df2["Source"] = labels[1]
+
+        df = pd.concat([df1, df2], ignore_index=True)
+
+        # Filter scenarios
+        df = df[df["Scenario"] != "Closed-loop (Intact)"]
+        df = df[df["Scenario"] != "Open-loop (Intact)"]
+
+        # Optional product filter
+        if product_filter is not None:
+            if isinstance(product_filter, str):
+                df = df[df["Product Name"] == product_filter]
+            else:
+                df = df[df["Product Name"].isin(product_filter)]
+
+        if df.empty:
+            print("No data to plot.")
+            return
+
+        xmax = df["Total Emission Intensity (kgCO2e/m2)"].max()
+
+        # --- Plot per product ---
+        for product, subset in df.groupby("Product Name"):
+
+            subset = subset.copy()
+
+            # Normalize
+            subset[stack_cols] = subset[stack_cols].div(
+                subset["Initial Global Area (m2)"], axis=0
+            )
+            subset["Total"] = subset[stack_cols].sum(axis=1)
+
+            # Sort by scenario + source for consistency
+            subset = subset.sort_values(["Scenario", "Source"])
+
+            scenarios = subset["Scenario"].unique()
+            y_base = np.arange(len(scenarios))
+
+            bar_height = 0.35
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.yaxis.grid(False)
+            ax.xaxis.grid(False)
+
+            for i, source in enumerate(labels):
+                sub = subset[subset["Source"] == source]
+
+                # Align y positions
+                y = y_base + (i - 0.5) * bar_height
+
+                left = np.zeros(len(sub))
+
+                for col in stack_cols:
+                    ax.barh(
+                        y,
+                        sub[col],
+                        height=bar_height,
+                        left=left,
+                        color=colors[col],
+                        edgecolor="none"
+                    )
+                    left += sub[col].values
+
+                # Total labels
+                for j, total in enumerate(sub["Total"]):
+                    ax.text(
+                        total + 0.5,
+                        y[j],
+                        f"{total:.0f}",
+                        va="center",
+                        fontsize=10,
+                        fontweight="bold"
+                    )
+
+            # Y labels (centered)
+            ax.set_yticks(y_base)
+            ax.set_yticklabels(scenarios, fontsize=12)
+
+            upper = math.ceil((xmax * 1.05) / 10) * 10
+            ax.set_xlim(0, upper)
+
+            ax.set_xlabel("Emissions (kgCO$_2$e/m$^2$)", fontsize=12)
+
+            # Legend (only once for stacks)
+            handles = [
+                plt.Rectangle((0, 0), 1, 1, color=colors[col])
+                for col in stack_cols
+            ]
+            ax.legend(
+                handles,
+                [c.replace("[Stage] ", "") for c in stack_cols],
+                title="Emission Source",
+                bbox_to_anchor=(1.05, 1),
+                loc="upper left"
+            )
+
+            # Add source legend manually
+            for i, source in enumerate(labels):
+                ax.barh([], [], color="gray", label=source)
+
+            ax.legend(title="Emission Source", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+            filename = f"{product}_comparison_stacked.png"
+            filepath = self.get_save_path(filename)
+
+            fig.savefig(filepath, dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+            print(f"[Plot] Saved comparison plot to: {filepath}")
+    def _plot_average_batch_intensity(self, df: pd.DataFrame):
         """Bar chart of average Intensity (kgCO2e/m2 output) where yield > 0."""
-        subset = df[df['Final Yield (%)'] > 1.0]
+        subset = df
+        # To remove Landfill from plot, intitate the following:
+        # subset = df[df['Recovered Yield (%)'] > 1.0]
         if subset.empty: return
 
         grouped = subset.groupby('Scenario')['Total Emission Intensity (kgCO2e/m2)'].mean().sort_values()
@@ -500,80 +844,6 @@ class Visualizer:
         plt.close(fig)
         print(f"   [Plot] Saved boxplot to: {filepath}")
 
-    def plot_heatmap(self, df: pd.DataFrame, value_col: str = 'Total Emissions (kgCO2e/batch)'):
-        """Heatmap: Product × Scenario matrix."""
-        if df.empty: return
-        
-        try:
-            pivot = df.pivot_table(index='Product Name', columns='Scenario', values=value_col, aggfunc='mean')
-        except Exception as e:
-            logger.warning(f"Could not create heatmap pivot: {e}")
-            return
-        
-        if pivot.empty: return
-        
-        fig, ax = plt.subplots(figsize=(16, max(8, len(pivot.index) * 0.3)), dpi=150)
-        
-        # Heatmap
-        im = ax.imshow(pivot.values, cmap='RdYlGn_r', aspect='auto')
-        
-        # Labels
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels(pivot.columns, rotation=45, ha='right', fontsize=9)
-        ax.set_yticks(range(len(pivot.index)))
-        ax.set_yticklabels(pivot.index, fontsize=8)
-        
-        # Colorbar
-        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-        cbar.set_label(value_col, fontweight='bold')
-        
-        ax.set_title(f"Product × Scenario: {value_col}", loc='left', pad=20)
-        
-        plt.tight_layout()
-        safe_col = value_col.replace(" ", "_").replace("/", "_").replace("(", "").replace(")", "").lower()
-        filepath = self.get_save_path(f"heatmap_{safe_col}.png")
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"   [Plot] Saved heatmap to: {filepath}")
-
-    def plot_violin_batch(self, df: pd.DataFrame):
-        """Violin plot: Emission density by scenario."""
-        if df.empty: return
-        
-        fig, ax = plt.subplots(figsize=(14, 8), dpi=150)
-        
-        scenarios = df['Scenario'].unique()
-        medians = df.groupby('Scenario')['Total Emissions (kgCO2e/batch)'].median().sort_values()
-        
-        data_to_plot = []
-        labels = []
-        for sc in medians.index:
-            data = df[df['Scenario'] == sc]['Total Emissions (kgCO2e/batch)'].dropna().values
-            if len(data) > 1:  # Violin needs at least 2 points
-                data_to_plot.append(data)
-                labels.append(sc)
-        
-        if not data_to_plot: return
-        
-        parts = ax.violinplot(data_to_plot, showmeans=True, showmedians=True)
-        
-        # Styling
-        for i, pc in enumerate(parts['bodies']):
-            pc.set_facecolor(plt.cm.viridis(i/len(data_to_plot)))
-            pc.set_edgecolor('black')
-            pc.set_alpha(0.7)
-        
-        ax.set_xticks(range(1, len(labels) + 1))
-        ax.set_xticklabels(labels, rotation=45, ha='right')
-        ax.set_ylabel("Total Emissions (kgCO₂e)", fontweight='bold')
-        ax.set_title("Emission Density by Scenario", loc='left', pad=15)
-        ax.grid(True, axis='y', linestyle=':', alpha=0.5)
-        
-        plt.tight_layout()
-        filepath = self.get_save_path("violin_emissions.png")
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"   [Plot] Saved violin plot to: {filepath}")
 
     def plot_donut_stages(self, result: ScenarioResult, product_name: str = ""):
         """Donut chart: Stage contribution percentage for one scenario."""
@@ -608,65 +878,12 @@ class Visualizer:
         plt.close(fig)
         print(f"   [Plot] Saved donut chart to: {filepath}")
 
-    def plot_radar_comparison(self, results: List[ScenarioResult], product_name: str = ""):
-        """Radar chart: Multi-criteria comparison of scenarios."""
-        if not results: return
-        
-        import numpy as np
-        
-        # Define criteria (normalize 0-1)
-        criteria = ['Low Emissions', 'High Yield', 'Low Transport', 'Low Processing', 'Low Waste']
-        
-        # Calculate normalized scores for each scenario
-        max_emissions = max(r.total_emissions_kgco2 for r in results) or 1
-        max_yield = max(r.yield_percent for r in results) or 1
-        
-        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True), dpi=150)
-        
-        angles = np.linspace(0, 2 * np.pi, len(criteria), endpoint=False).tolist()
-        angles += angles[:1]  # Close the loop
-        
-        cmap = plt.cm.get_cmap('tab10')
-        
-        for i, r in enumerate(results[:6]):  # Limit to 6 for readability
-            # Calculate scores (higher = better)
-            transport_e = r.by_stage.get('Transport A', 0) + r.by_stage.get('Transport B', 0) if r.by_stage else 0
-            processing_e = r.by_stage.get('Repair', 0) + r.by_stage.get('Disassembly', 0) + r.by_stage.get('Assembly', 0) if r.by_stage else 0
-            waste_e = r.by_stage.get('Landfill Transport (Waste)', 0) if r.by_stage else 0
-            
-            max_transport = max((res.by_stage.get('Transport A', 0) + res.by_stage.get('Transport B', 0)) if res.by_stage else 1 for res in results) or 1
-            max_processing = max((res.by_stage.get('Repair', 0) + res.by_stage.get('Disassembly', 0) + res.by_stage.get('Assembly', 0)) if res.by_stage else 1 for res in results) or 1
-            max_waste = max((res.by_stage.get('Landfill Transport (Waste)', 0)) if res.by_stage else 1 for res in results) or 1
-            
-            scores = [
-                1 - (r.total_emissions_kgco2 / max_emissions),
-                r.yield_percent / 100.0,
-                1 - (transport_e / max_transport) if max_transport > 0 else 1,
-                1 - (processing_e / max_processing) if max_processing > 0 else 1,
-                1 - (waste_e / max_waste) if max_waste > 0 else 1
-            ]
-            scores += scores[:1]  # Close
-            
-            ax.plot(angles, scores, 'o-', linewidth=2, label=r.scenario_name, color=cmap(i))
-            ax.fill(angles, scores, alpha=0.1, color=cmap(i))
-        
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(criteria, fontsize=10)
-        ax.set_ylim(0, 1)
-        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=9)
-        ax.set_title(f"Multi-Criteria Comparison\n{product_name}", pad=30)
-        
-        plt.tight_layout()
-        filepath = self.get_save_path("radar_comparison.png")
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"   [Plot] Saved radar chart to: {filepath}")
 
     def plot_horizontal_intensity(self, df: pd.DataFrame):
         """Horizontal bar: Carbon intensity ranking by scenario."""
         if df.empty: return
         
-        subset = df[df['Final Yield (%)'] > 1.0]
+        subset = df[df['Recovered Yield (%)'] > 1.0]
         if subset.empty: return
         
         grouped = subset.groupby('Scenario')['Total Emission Intensity (kgCO2e/m2)'].mean().sort_values()
@@ -693,66 +910,6 @@ class Visualizer:
         plt.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"   [Plot] Saved horizontal intensity to: {filepath}")
-
-    def plot_tornado_sensitivity(self, base_result: ScenarioResult, 
-                                  sensitivity_params: Dict[str, tuple] = None,
-                                  product_name: str = ""):
-        """
-        Tornado chart: Parameter sensitivity analysis.
-        sensitivity_params: dict of {param_name: (low_emission, high_emission)}
-        If not provided, uses mock data based on by_stage.
-        """
-        if not base_result.by_stage: return
-        
-        # If no sensitivity data provided, estimate from stages
-        if sensitivity_params is None:
-            # Create mock sensitivity based on ±20% variation
-            sensitivity_params = {}
-            for stage, val in base_result.by_stage.items():
-                if val > 0:
-                    low = base_result.total_emissions_kgco2 - val * 0.2
-                    high = base_result.total_emissions_kgco2 + val * 0.2
-                    sensitivity_params[stage] = (low, high)
-        
-        if not sensitivity_params: return
-        
-        fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
-        
-        # Sort by impact (high - low)
-        sorted_params = sorted(sensitivity_params.items(), key=lambda x: x[1][1] - x[1][0], reverse=True)
-        
-        base_val = base_result.total_emissions_kgco2
-        labels = []
-        low_deltas = []
-        high_deltas = []
-        
-        for param, (low, high) in sorted_params:
-            labels.append(param)
-            low_deltas.append(low - base_val)
-            high_deltas.append(high - base_val)
-        
-        y_pos = range(len(labels))
-        
-        # Plot bars
-        ax.barh(y_pos, low_deltas, color=self.colors['yield_dark'], alpha=0.8, label='Low Value')
-        ax.barh(y_pos, high_deltas, color=self.colors['emissions_dark'], alpha=0.8, label='High Value')
-        
-        # Base line
-        ax.axvline(x=0, color='black', linewidth=2)
-        
-        ax.set_yticks(y_pos)
-        ax.set_yticklabels(labels)
-        ax.set_xlabel("Change in Total Emissions (kgCO₂e)", fontweight='bold')
-        ax.set_title(f"Sensitivity Analysis: {base_result.scenario_name}\n{product_name}", loc='left', pad=20)
-        ax.legend(loc='lower right')
-        ax.grid(True, axis='x', linestyle=':', alpha=0.5)
-        
-        plt.tight_layout()
-        safe_name = base_result.scenario_name.replace(" ", "_").lower()
-        filepath = self.get_save_path(f"tornado_{safe_name}.png")
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"   [Plot] Saved tornado chart to: {filepath}")
 
     # ============================================================================
     # COMPREHENSIVE PLOT GENERATOR
@@ -792,7 +949,19 @@ class Visualizer:
         #self.plot_violin_batch(df)
         
         # Intensity (with gradient colors)
-        self._plot_batch_intensity(df)
+        self._plot_average_batch_intensity(df)
+        #self._plot_product_intensity(df)
+        self._plot_product_intensity_faceted(df)
+        self._plot_product_intensity_stacked(df)
         
         print(f"\n   [Complete] All batch plots saved to: {self.session_dir}")
+
+    if __name__ == "__main__":
+        plotter = Visualizer()
+
+        plotter._plot_product_intensity_comparison_from_csv(
+            "local_automated_analysis_report.csv",
+            "european_automated_analysis_report.csv",
+            product_filter=["1.1_DGU_6_16_6_Bronze","1.3_TGU_6_16_6_16_6_Bronze_Low-e"]
+        )
 

@@ -876,7 +876,7 @@ def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         # "Product Name": "Product Name", # Stays
         # "Scenario": "Scenario", # Stays
         # "Total Emissions (kgCO2e/batch)": "Total Emissions (kgCO2e/batch)", # Stays
-        #"Final Yield (%)": "Final Yield (%))", # Stays
+        #"Recovered Yield (%)": "Recovered Yield (%))", # Stays
         "Final Mass (kg)": "Recovered Mass (kg)",
         #Total Emission Intensity (kgCO2e/m2): Total Emission Intensity (kgCO2e/m2), #Stays"
         
@@ -905,7 +905,7 @@ def format_and_clean_report_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         "Product ID", "Product Name", "Scenario",
         
         # Key KPIs
-        "Total Emissions (kgCO2e/batch)", "Total Emission Intensity (kgCO2e/m2)", "Final Yield (%)", "Recovered Mass (kg)",
+        "Total Emissions (kgCO2e/batch)", "Total Emission Intensity (kgCO2e/m2)", "Initial Global Area (m2)", "Recovered Yield (%)", "Recovered Yield for Float Glass (%)", "Recovered Mass (kg)",
         
         # Stages (Chronological Flow)
         "[Stage] Building Site Dismantling",
@@ -959,12 +959,14 @@ def print_scenario_overview(result: ScenarioResult):
     
     print(f"\n{C_HEADER}Yield Summary:{C_RESET}")
     print(f"  Initial Acceptable IGUs: {result.initial_igus:.0f}")
-    print(f"  Initial Area:            {result.initial_area_m2:.3f} m²")
+    print(f"  Initial Area:            {result.initial_global_area_m2:.3f} m²")
     print(f"  Final Output IGUs/Units: {result.final_igus:.0f}")
-    print(f"  Final Output Area:       {result.final_area_m2:.3f} m²")
-    print(f"  Yield (Area basis):      {result.yield_percent:.1f}%")
-    print(f"  Initial Mass:            {result.initial_mass_kg/1000.0:.3f} t")
-    print(f"  Final Mass:              {result.final_mass_kg/1000.0:.3f} t")
+    print(f"  Final Output Area:       {result.final_global_area_m2:.3f} m²")
+    print(f"  Total Yield Recovered (Area basis):      {result.total_recovered_yield:.1f}%")
+    print(f"  Recovered Yield for Flat Glass (IGU) (Area basis):      {result.recovered_yield_FG_IGU:.1f}%")
+    print(f"  Recovered Yield for Other Glass Applications (Area basis):      {result.recovered_yield_other:.1f}%")
+    print(f"  Initial Mass:            {result.initial_global_mass_kg/1000.0:.3f} t")
+    print(f"  Final Mass:              {result.final_global_mass_kg/1000.0:.3f} t")
     
     print(f"\n{C_HEADER}Carbon Emissions (kg CO2e):{C_RESET}")
     for stage, val in result.by_stage.items():
@@ -973,6 +975,6 @@ def print_scenario_overview(result: ScenarioResult):
     print(f"{'-'*60}")
     print(f"  {Style.BRIGHT}TOTAL EMISSIONS              : {C_SUCCESS}{result.total_emissions_kgco2:.3f}{C_RESET} {Style.BRIGHT}kg CO2e{C_RESET}")
     
-    if result.final_area_m2 > 0:
-         print(f"  Intensity (per output m²)    : {result.total_emissions_kgco2 / result.final_area_m2:.3f} kgCO2e/m²")
+    if result.final_global_area_m2 > 0:
+         print(f"  Intensity (per output m²)    : {result.total_emissions_kgco2 / result.initial_global_area_m2:.3f} kgCO2e/m²")
     print(f"{'='*60}\n")

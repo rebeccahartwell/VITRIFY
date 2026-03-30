@@ -189,8 +189,10 @@ class ScenarioResult:
     by_stage: Dict[str, float]
     initial_igus: float
     final_igus: float
-    initial_area_m2: float
-    final_area_m2: float
-    initial_mass_kg: float
-    final_mass_kg: float
-    yield_percent: float
+    initial_global_area_m2: float
+    final_global_area_m2: float
+    initial_global_mass_kg: float
+    final_global_mass_kg: float
+    total_recovered_yield: float
+    recovered_yield_FG_IGU: float
+    recovered_yield_other: float

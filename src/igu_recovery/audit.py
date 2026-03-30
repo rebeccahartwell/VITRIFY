@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 current_directory =  os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Build the path to reports relative to the current directory
-report_directory = os.path.join(current_directory, 'reports')
+report_directory = os.path.join(current_directory, 'reports', 'audit_logs')
 
 
 class CalculationAudit:
