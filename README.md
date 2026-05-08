@@ -1,13 +1,14 @@
 # VITRIFY - IGU Recovery Environmental Impact Prototype
 
-**VITRIFY** is a robust environmental impact assessment tool designed to calculate the Carbon Footprint (kg CO2e) of recovering Insulating Glass Units (IGUs). It compares 11 distinct recovery scenarios, from direct reuse to recycling and landfill, helping decision-makers choose the most sustainable path.
+**VITRIFY** is an environmental impact assessment tool designed to calculate the Carbon Footprint (kg CO2e) of recovering Insulating Glass Units (IGUs). It compares distinct recovery scenarios, ranging from direct reuse to recycling and landfill.
 
-## 🚀 Key Capabilities
+## Key Capabilities
 
-### 1. Recovery Scenarios (The 11 Paths)
+### 1. Recovery Scenarios
 The tool models the detailed physics and logistics of:
 - **System Reuse**: Safely removing and re-installing the IGU (with optional repair).
-- **Component Reuse**: Disassembling the IGU to recover panes for re-manufacturing.
+- **Component Reuse**: Disassembling the IGU to recover panes for direct component reuse.
+- **Remanufacture**: Disassembling the IGU to recover panes for re-manufacturing.
 - **Component Repurpose**: Re-using glass in lower-grade applications (3 intensity levels).
 - **Closed-loop Recycling**: Returning cullet to a flat glass float plant (High quality).
 - **Open-loop Recycling**: Down-cycling to glass wool or container glass.
@@ -107,7 +108,7 @@ d:\VITRIFY\
 ├── src\
 │   ├── Recovery_IGU_CO2.py      # Main Launcher
 │   └── igu_recovery\            # Core Logic
-│       ├── scenarios.py         # Physics of the 11 paths
+│       ├── scenarios.py         # Physics of the recovery scenarios
 │       ├── calculations.py      # Math & Geometry
 │       └── visualization.py     # Plotting logic
 ├── data\                        # Product Databases
