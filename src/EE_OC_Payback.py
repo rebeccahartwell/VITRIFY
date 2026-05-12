@@ -21,7 +21,7 @@ EE_OC_low_db = os.path.join(current_directory, 'PycharmProjects', 'VITRIFY', 'da
 EE_OC_high_db = os.path.join(current_directory, 'PycharmProjects', 'VITRIFY', 'data', 'results', 'EE_OC_Results_high.csv')
 
 # Load CSV
-EE_OC_df = pd.read_csv(EE_OC_high_db)
+EE_OC_df = pd.read_csv(EE_OC_low_db)
 
 
 # ---------------------------------------------------------

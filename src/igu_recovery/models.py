@@ -5,7 +5,7 @@ from .constants import (
     TRUCK_CAPACITY_T, FERRY_CAPACITY_T, DISTANCE_FALLBACK_A_KM, DISTANCE_FALLBACK_B_KM,
     BREAKAGE_RATE_GLOBAL, HUMIDITY_FAILURE_RATE, SPLIT_YIELD, REMANUFACTURING_YIELD,
     ROUTE_A_MODE, ROUTE_B_MODE, IGUS_PER_STILLAGE, STILLAGE_MASS_EMPTY_KG,
-    MAX_TRUCK_LOAD_KG, E_SITE_KGCO2_PER_M2, INCLUDE_STILLAGE_EMBODIED,
+    MAX_TRUCK_LOAD_KG, E_SITE_KGCO2_PER_M2, E_SITE_LANDFILL_KGCO2_PER_M2, INCLUDE_STILLAGE_EMBODIED,
     REPURPOSE_MEDIUM_KGCO2_PER_M2, FLOAT_GLASS_REPROCESSING_KGCO2_PER_KG,
     GlazingType, GlassType, CoatingType, SealantType, SpacerMaterial,
     EdgeSealCondition, TransportMode, ProcessLevel, SystemPath, RepurposePreset
@@ -78,6 +78,7 @@ class ProcessSettings:
     process_level: ProcessLevel = "component"
     system_path: SystemPath = "reuse"
     e_site_kgco2_per_m2: float = E_SITE_KGCO2_PER_M2
+    e_site_landfill_kgco2_per_m2: float = E_SITE_LANDFILL_KGCO2_PER_M2
     include_stillage_embodied: bool = INCLUDE_STILLAGE_EMBODIED
     repurpose_preset: RepurposePreset = "medium"
     repurpose_kgco2_per_m2: float = REPURPOSE_MEDIUM_KGCO2_PER_M2

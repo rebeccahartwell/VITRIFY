@@ -199,6 +199,11 @@ class Visualizer:
         
         # Call all batch visualization methods
         self.generate_all_batch_plots(df)
+        self.plot_product_intensity_stacked_2x2(
+            "local_automated_analysis_report.csv",
+            "european_automated_analysis_report.csv",
+            products=["1.1_DGU_6_16_6_Bronze","1.3_TGU_6_16_6_16_6_Bronze_Low-e"]
+        )
 
 
 
@@ -420,6 +425,8 @@ class Visualizer:
         #df = df[df['Recovered Yield (%)'] > 0.0]
         df = df[df["Scenario"] != "Closed-loop (Intact)"]
         df = df[df["Scenario"] != "Open-loop (Intact)"]
+        if df.empty:
+            raise ValueError("No data left after scenario filtering.")
         xmax = df["Total Emission Intensity (kgCO2e/m2)"].max()
 
         for product, subset in df.groupby("Product Name"):
@@ -481,7 +488,8 @@ class Visualizer:
 
             print(f"   [Plot] Saved intensity plot to: {filepath}")
 
-    def _plot_product_intensity_comparison_from_csv(
+    #Plot Local and European on the same plot
+    def plot_product_intensity_comparison_from_csv(
             self,
             csv_path1: str,
             csv_path2: str,
@@ -540,6 +548,8 @@ class Visualizer:
         # Filter scenarios
         df = df[df["Scenario"] != "Closed-loop (Intact)"]
         df = df[df["Scenario"] != "Open-loop (Intact)"]
+        if df.empty:
+            raise ValueError("No data left after scenario filtering.")
 
         # Optional product filter
         if product_filter is not None:
@@ -558,6 +568,8 @@ class Visualizer:
         for product, subset in df.groupby("Product Name"):
 
             subset = subset.copy()
+            if subset.empty:
+                continue
 
             # Normalize
             subset[stack_cols] = subset[stack_cols].div(
@@ -642,6 +654,311 @@ class Visualizer:
             plt.close(fig)
 
             print(f"[Plot] Saved comparison plot to: {filepath}")
+
+    def plot_product_intensity_stacked_2x2(
+            self,
+            csv_local: str,
+            csv_europe: str,
+            products: list,
+    ):
+        """
+        Create a 2x2 stacked horizontal bar matrix.
+
+        Rows    = geographical datasets
+        Columns = products
+
+        Example layout:
+            (a) Local - DGU      (b) Local - TGU
+            (c) Europe - DGU     (d) Europe - TGU
+        """
+
+        # ------------------------------------------------------------------
+        # STYLE
+        # ------------------------------------------------------------------
+
+        sns.set_theme(style="white")
+
+        mpl.rcParams["font.family"] = "Verdana"
+        mpl.rcParams["axes.titlesize"] = 14
+        mpl.rcParams["axes.labelsize"] = 12
+        mpl.rcParams["xtick.labelsize"] = 10
+        mpl.rcParams["ytick.labelsize"] = 10
+
+        # ------------------------------------------------------------------
+        # DATA
+        # ------------------------------------------------------------------
+
+        stack_cols = [
+            "[Stage] Building Site Dismantling",
+            "[Stage] Transport: Site->Processor",
+            "[Stage] System Disassembly",
+            "[Stage] Repair",
+            "[Stage] Recondition",
+            "[Stage] Repurpose",
+            "[Stage] Glass Reprocessing",
+            "[Stage] New Glass",
+            "[Stage] IGU Re-Assembly",
+            "[Stage] Packaging",
+            "[Stage] Transport: Processor->Next Use",
+            "[Stage] Next Use Installation",
+            "[Stage] Transport: Processor->Open-Loop Facility",
+            "[Stage] Transport: Landfill Disposal",
+        ]
+
+        palette_colors = [
+            "#1B9E77",
+            "#FC8D62",
+            "#7570B3",
+            "#A6D854",
+            "#D95F02",
+            "#8DA0CB",
+            "#E7298A",
+            "#66C2A5",
+            "#E6AB02",
+            "#E78AC3",
+            "#66A61E",
+            "#FFD92F",
+            "#666666",
+            "#A6761D",
+        ]
+
+        colors = dict(zip(stack_cols, palette_colors))
+
+        # ------------------------------------------------------------------
+        # LOAD DATA
+        # ------------------------------------------------------------------
+
+        df_local = pd.read_csv(csv_local)
+        df_europe = pd.read_csv(csv_europe)
+
+        def clean(df):
+            df = df.copy()
+
+            df = df[df["Scenario"] != "Closed-loop (Intact)"]
+            df = df[df["Scenario"] != "Open-loop (Intact)"]
+
+            return df
+
+        datasets = [
+            ("Local", clean(df_local)),
+            ("European", clean(df_europe)),
+        ]
+
+        # ------------------------------------------------------------------
+        # GLOBAL X LIMIT
+        # ------------------------------------------------------------------
+
+        xmax = max(
+            df_local["Total Emission Intensity (kgCO2e/m2)"].max(),
+            df_europe["Total Emission Intensity (kgCO2e/m2)"].max(),
+        )
+
+        upper = math.ceil((xmax * 1.10) / 10) * 10
+
+        # ------------------------------------------------------------------
+        # FIGURE
+        # ------------------------------------------------------------------
+
+        fig, axes = plt.subplots(
+            nrows=2,
+            ncols=2,
+            figsize=(13, 9),
+            sharex=True,
+        )
+
+        fig.patch.set_facecolor("white")
+
+        panel_labels = ["(a)", "(b)", "(c)", "(d)"]
+
+        # ------------------------------------------------------------------
+        # PLOTTING
+        # ------------------------------------------------------------------
+
+        panel_counter = 0
+
+        for row_idx, (geo_name, df_geo) in enumerate(datasets):
+
+            for col_idx, product in enumerate(products):
+
+                ax = axes[row_idx, col_idx]
+
+                subset = df_geo[
+                    df_geo["Product Name"] == product
+                    ].copy()
+
+                if subset.empty:
+                    ax.axis("off")
+                    continue
+
+                # ----------------------------------------------------------
+                # NORMALIZE
+                # ----------------------------------------------------------
+
+                subset[stack_cols] = subset[stack_cols].div(
+                    subset["Initial Global Area (m2)"],
+                    axis=0,
+                )
+
+                subset["Total"] = subset[stack_cols].sum(axis=1)
+
+                # Reverse display order
+                subset = subset.iloc[::-1]
+
+                y = np.arange(len(subset))
+
+
+                # ----------------------------------------------------------
+                # STACKED BARS
+                # ----------------------------------------------------------
+
+                y = np.arange(len(subset))
+
+                left = np.zeros(len(subset))
+
+                for col in stack_cols:
+                    ax.barh(
+                        y,
+                        subset[col],
+                        left=left,
+                        height=0.8,
+                        color=colors[col],
+                        edgecolor="none",
+                    )
+
+                    left += subset[col].values
+
+                # ----------------------------------------------------------
+                # AXES FORMAT
+                # ----------------------------------------------------------
+
+                ax.set_xlim(0, upper)
+
+                ax.set_yticks(y)
+
+                ax.set_yticklabels(
+                    subset["Scenario"],
+                    fontsize=9,
+                )
+
+                ax.set_facecolor("white")
+
+                ax.grid(False)
+
+                # panel title
+                short_name = (
+                    "DGU"
+                    if "DGU" in product
+                    else "TGU"
+                )
+
+                ax.set_title(
+                    f"{geo_name} - {short_name}",
+                    fontsize=12,
+                    fontweight="bold",
+                    pad=4,
+                )
+
+                # subplot label
+                ax.text(
+                    -0.15,
+                    1.03,
+                    panel_labels[panel_counter],
+                    transform=ax.transAxes,
+                    fontsize=12,
+                    fontweight="bold",
+                )
+
+                panel_counter += 1
+
+                # ----------------------------------------------------------
+                # TOTAL LABELS
+                # ----------------------------------------------------------
+
+                for i, total in enumerate(subset["Total"]):
+                    ax.text(
+                        total + 1,
+                        i,
+                        f"{total:.0f}",
+                        va="center",
+                        fontsize=8,
+                        fontweight="bold",
+                    )
+
+                # ----------------------------------------------------------
+                # SPINES
+                # ----------------------------------------------------------
+
+                ax.spines["top"].set_linewidth(0.5)
+                ax.spines["right"].set_linewidth(0.5)
+
+                ax.spines["left"].set_linewidth(0.5)
+                ax.spines["bottom"].set_linewidth(0.5)
+
+        # ------------------------------------------------------------------
+        # SHARED X LABEL
+        # ------------------------------------------------------------------
+
+        fig.supxlabel(
+            "Emissions (kgCO$_2$e/m$^2$)",
+            fontsize=12,
+            y=0.1,
+        )
+
+        # ------------------------------------------------------------------
+        # LEGEND
+        # ------------------------------------------------------------------
+
+        handles = [
+            plt.Rectangle(
+                (0, 0),
+                1,
+                1,
+                color=colors[col],
+            )
+            for col in stack_cols
+        ]
+
+        legend_labels = [
+            c.replace("[Stage] ", "")
+            for c in stack_cols
+        ]
+
+        fig.legend(
+            handles,
+            legend_labels,
+            title="Emission Source",
+            ncol=5,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 0),
+            fontsize=8,
+            title_fontsize=9,
+            frameon=True,
+        )
+
+        # ------------------------------------------------------------------
+        # LAYOUT
+        # ------------------------------------------------------------------
+
+        fig.tight_layout(rect=[0, 0.08, 1, 1])
+
+        # ------------------------------------------------------------------
+        # SAVE
+        # ------------------------------------------------------------------
+
+        filepath = self.get_save_path(
+            "2x2_product_intensity_matrix.png"
+        )
+        fig.savefig(
+            filepath,
+            dpi=600,
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor(),
+        )
+
+        plt.close(fig)
+
+        print(f"[Plot] Saved 2x2 matrix plot to: {filepath}")
+
     def _plot_average_batch_intensity(self, df: pd.DataFrame):
         """Bar chart of average Intensity (kgCO2e/m2 output) where yield > 0."""
         subset = df
@@ -947,21 +1264,12 @@ class Visualizer:
         # Distribution plots
         #self.plot_boxplot_batch(df)
         #self.plot_violin_batch(df)
-        
         # Intensity (with gradient colors)
-        self._plot_average_batch_intensity(df)
+        #self._plot_average_batch_intensity(df)
         #self._plot_product_intensity(df)
-        self._plot_product_intensity_faceted(df)
+        #self._plot_product_intensity_faceted(df)
         self._plot_product_intensity_stacked(df)
-        
+
         print(f"\n   [Complete] All batch plots saved to: {self.session_dir}")
 
-    if __name__ == "__main__":
-        plotter = Visualizer()
-
-        plotter._plot_product_intensity_comparison_from_csv(
-            "local_automated_analysis_report.csv",
-            "european_automated_analysis_report.csv",
-            product_filter=["1.1_DGU_6_16_6_Bronze","1.3_TGU_6_16_6_16_6_Bronze_Low-e"]
-        )
 

@@ -1,0 +1,25 @@
+﻿,EC,OC
+EG1->EG2: Remanufacture,403.92,-2.795209893
+EG1->EG2: Closed-loop recycling,448.2,-2.795209893
+EG1->A1: Remanufacture,403.92,-47.85407759
+EG1->A1: Closed-loop recycling,448.2,-47.85407759
+EG1*->EG1: Remanufacture,403.92,15.76116773
+EG1*->EG1: Closed-loop recycling,448.2,15.76116773
+EG1*->EG2: Remanufacture,403.92,12.96595784
+EG1*->EG2: Closed-loop recycling,448.2,12.96595784
+EG1*->A1: Remanufacture,403.92,-32.09290985
+EG1*->A1: Closed-loop recycling,448.2,-32.09290985
+EG2->A1: Remanufacture,403.92,-45.05886769
+EG2->A1: Closed-loop recycling,448.2,-45.05886769
+EG2#->EG2: Direct system reuse (w/ repair),185.76,-0.786036653
+EG2#->EG2: Remanufacture,403.92,-0.786036653
+EG2#->EG2: Closed-loop recycling,448.2,-0.786036653
+EG2#->A1: Remanufacture,403.92,-45.84490435
+EG2#->A1: Closed-loop recycling,448.2,-45.84490435
+EG2*#->EG2: Remanufacture,403.92,14.65594023
+EG2*#->EG2: Closed-loop recycling,448.2,14.65594023
+EG2*#->A1: Remanufacture,403.92,-30.40292747
+EG2*#->A1: Closed-loop recycling,448.2,-30.40292747
+A1*->A1: Direct system reuse (w/ repair),185.76,-1.412043121
+A1*->A1: Remanufacture,403.92,-1.412043121
+A1*->A1: Closed-loop recycling,448.2,-1.412043121

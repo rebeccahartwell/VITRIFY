@@ -112,8 +112,7 @@ def run_scenario_landfill(
     # Dismantling emissions (still happen?) -> "Straight to landfill" usually implies removal.
     # Using e_site_kgco2_per_m2 (removal)
     #Updated demolition factor for landfill (C1)
-    dismantling_kgco2 = flow_start.area_m2 * 10 * 0.3
-    #dismantling_kgco2 = flow_start.area_m2 * processes.e_site_kgco2_per_m2
+    dismantling_kgco2 = flow_start.area_m2 * processes.e_site_landfill_kgco2_per_m2
 
     #--------------------------------------------
     # ! NEW GLASS REQUIRED TO REACH EQUIVALENT QUANTITY
